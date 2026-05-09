@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts";
-import { formatCurrency } from "@/lib/dummy-data";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { Download, FileText, Calendar, AlertCircle } from "lucide-react";
 import { useState } from "react";
 

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
 // dummy-data.ts hanya disisakan untuk fungsi format saja
-import { formatCurrency, formatDate } from "@/lib/dummy-data";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { Upload, Download, CreditCard, Calendar, CheckCircle, AlertCircle } from "lucide-react";
 import { useState } from "react";
 

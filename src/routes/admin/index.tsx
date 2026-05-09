@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Users, CreditCard, DollarSign, Clock, TrendingUp, ArrowUpRight, AlertCircle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
-import { formatCurrency } from "@/lib/dummy-data";
+import { formatCurrency, formatDate } from "@/lib/utils";
 
 // --- Import Firebase & React Query ---
 import { useQuery } from "@tanstack/react-query";

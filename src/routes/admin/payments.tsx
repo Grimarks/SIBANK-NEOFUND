@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { formatCurrency, formatDate } from "@/lib/dummy-data";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { CheckCircle, Eye, AlertCircle, Bell, Search } from "lucide-react";
 import { useState } from "react";
 

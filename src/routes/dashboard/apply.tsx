@@ -2,7 +2,7 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { useState } from "react";
 import { Calculator, Info, ArrowRight } from "lucide-react";
-import { formatCurrency } from "@/lib/dummy-data"; // Hanya untuk format UI
+import { formatCurrency, formatDate } from "@/lib/utils";
 
 // --- Import Firebase & UI utilities ---
 import { collection, addDoc } from "firebase/firestore";
