@@ -1,15 +1,66 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { recentTransactions, formatCurrency, formatDate } from "@/lib/dummy-data";
-import { Upload, Download, CreditCard, Calendar, CheckCircle } from "lucide-react";
+// dummy-data.ts hanya disisakan untuk fungsi format saja
+import { formatCurrency, formatDate } from "@/lib/dummy-data";
+import { Upload, Download, CreditCard, Calendar, CheckCircle, AlertCircle } from "lucide-react";
 import { useState } from "react";
+
+// --- Import Firebase & React Query ---
+import { useQuery } from "@tanstack/react-query";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 export const Route = createFileRoute("/dashboard/payments")({
   component: PaymentsPage,
 });
 
+// Interface untuk TypeScript
+interface Transaction {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+  type: string;
+}
+
 function PaymentsPage() {
   const [showPay, setShowPay] = useState(false);
+
+  // Fetching data transaksi dari Firestore
+  const { data: recentTransactions = [], isLoading, isError } = useQuery({
+    queryKey: ["recentTransactions"],
+    queryFn: async () => {
+      const querySnapshot = await getDocs(collection(db, "recentTransactions"));
+      const txData: Transaction[] = [];
+      querySnapshot.forEach((doc) => {
+        txData.push({ id: doc.id, ...doc.data() } as Transaction);
+      });
+      return txData;
+    },
+  });
+
+  // Tampilan Loading
+  if (isLoading) {
+    return (
+      <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments">
+        <div className="flex justify-center items-center h-40 animate-pulse">
+          <p style={{ color: "var(--muted-foreground)" }}>Memuat riwayat pembayaran...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // Tampilan Error
+  if (isError) {
+    return (
+      <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments">
+        <div className="flex justify-center items-center h-40 text-red-500 gap-2">
+          <AlertCircle className="w-5 h-5" />
+          <p>Gagal memuat data dari database.</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments">
@@ -69,17 +120,26 @@ function PaymentsPage() {
         <h3 className="font-semibold mb-4">Payment History</h3>
         <table className="data-table">
           <thead>
-            <tr><th>Date</th><th>Description</th><th>Amount</th><th>Status</th></tr>
+          <tr><th>Date</th><th>Description</th><th>Amount</th><th>Status</th></tr>
           </thead>
           <tbody>
-            {recentTransactions.filter((t) => t.type === "payment").map((t) => (
-              <tr key={t.id}>
-                <td>{formatDate(t.date)}</td>
-                <td>{t.description}</td>
-                <td className="font-semibold">{formatCurrency(Math.abs(t.amount))}</td>
-                <td><span className="badge-status badge-approved">Verified</span></td>
-              </tr>
-            ))}
+          {/* Filter menggunakan data dari Firestore */}
+          {recentTransactions.filter((t) => t.type === "payment").map((t) => (
+            <tr key={t.id}>
+              <td>{formatDate(t.date)}</td>
+              <td>{t.description}</td>
+              <td className="font-semibold">{formatCurrency(Math.abs(t.amount))}</td>
+              <td><span className="badge-status badge-approved">Verified</span></td>
+            </tr>
+          ))}
+
+          {recentTransactions.filter((t) => t.type === "payment").length === 0 && (
+            <tr>
+              <td colSpan={4} className="text-center py-4 text-sm" style={{ color: "var(--muted-foreground)" }}>
+                Belum ada riwayat pembayaran.
+              </td>
+            </tr>
+          )}
           </tbody>
         </table>
       </div>

@@ -1,21 +1,63 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { useState } from "react";
 import { Calculator, Info, ArrowRight } from "lucide-react";
-import { formatCurrency } from "@/lib/dummy-data";
+import { formatCurrency } from "@/lib/dummy-data"; // Hanya untuk format UI
+
+// --- Import Firebase & UI utilities ---
+import { collection, addDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard/apply")({
   component: ApplyLoanPage,
 });
 
 function ApplyLoanPage() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+
+  // State yang sudah ada
   const [amount, setAmount] = useState(10000000);
   const [duration, setDuration] = useState(12);
+
+  // State baru untuk menampung input pengguna
+  const [purpose, setPurpose] = useState("Personal");
+  const [notes, setNotes] = useState("");
+
   const rate = duration <= 6 ? 7.0 : duration <= 12 ? 8.5 : duration <= 24 ? 9.0 : 10.5;
   const monthlyInterest = rate / 100 / 12;
   const monthly = amount * (monthlyInterest * Math.pow(1 + monthlyInterest, duration)) / (Math.pow(1 + monthlyInterest, duration) - 1);
   const totalPayment = monthly * duration;
   const totalInterest = totalPayment - amount;
+
+  // Mutasi React Query untuk menyimpan ke Firestore
+  const { mutate: submitApplication, isPending } = useMutation({
+    mutationFn: async () => {
+      await addDoc(collection(db, "adminLoans"), {
+        customer: "Nama Nasabah", // Nanti bisa diganti dengan nama user yang sedang Login
+        amount,
+        duration,
+        rate,
+        status: "pending",
+        riskLevel: "medium", // Default risk level
+        appliedDate: new Date().toISOString().split("T")[0],
+        purpose,
+        notes,
+      });
+    },
+    onSuccess: () => {
+      // Notifikasi sukses dan arahkan user ke halaman My Loans
+      toast.success("Pengajuan berhasil dikirim!");
+      queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
+      router.navigate({ to: "/dashboard/loans" });
+    },
+    onError: (error) => {
+      toast.error("Gagal mengirim pengajuan. Silakan coba lagi.");
+      console.error(error);
+    }
+  });
 
   return (
     <DashboardLayout role="customer" title="Apply for Loan" subtitle="Submit a new loan application">
@@ -31,7 +73,7 @@ function ApplyLoanPage() {
                 <span className="text-sm font-bold" style={{ color: "var(--emerald)" }}>{formatCurrency(amount)}</span>
               </div>
               <input type="range" min={1000000} max={100000000} step={1000000} value={amount} onChange={(e) => setAmount(Number(e.target.value))}
-                className="w-full h-2 rounded-full appearance-none cursor-pointer" style={{ background: "var(--secondary)", accentColor: "var(--emerald)" }} />
+                     className="w-full h-2 rounded-full appearance-none cursor-pointer" style={{ background: "var(--secondary)", accentColor: "var(--emerald)" }} />
               <div className="flex justify-between text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>
                 <span>Rp 1M</span><span>Rp 100M</span>
               </div>
@@ -41,8 +83,8 @@ function ApplyLoanPage() {
               <div className="grid grid-cols-4 gap-2">
                 {[6, 12, 24, 36].map((d) => (
                   <button key={d} onClick={() => setDuration(d)}
-                    className={`py-2.5 rounded-lg text-sm font-medium transition-all ${duration === d ? "gradient-emerald" : ""}`}
-                    style={duration === d ? { color: "var(--emerald-foreground)" } : { background: "var(--secondary)", color: "var(--foreground)" }}>
+                          className={`py-2.5 rounded-lg text-sm font-medium transition-all ${duration === d ? "gradient-emerald" : ""}`}
+                          style={duration === d ? { color: "var(--emerald-foreground)" } : { background: "var(--secondary)", color: "var(--foreground)" }}>
                     {d} months
                   </button>
                 ))}
@@ -50,13 +92,26 @@ function ApplyLoanPage() {
             </div>
             <div>
               <label className="text-xs font-medium mb-2 block" style={{ color: "var(--muted-foreground)" }}>Loan Purpose</label>
-              <select className="fintech-input">
-                <option>Personal</option><option>Business</option><option>Education</option><option>Emergency</option>
+              <select
+                className="fintech-input"
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+              >
+                <option>Personal</option>
+                <option>Business</option>
+                <option>Education</option>
+                <option>Emergency</option>
               </select>
             </div>
             <div>
               <label className="text-xs font-medium mb-2 block" style={{ color: "var(--muted-foreground)" }}>Additional Notes</label>
-              <textarea className="fintech-input" rows={3} placeholder="Tell us about your loan purpose..." />
+              <textarea
+                className="fintech-input"
+                rows={3}
+                placeholder="Tell us about your loan purpose..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
             </div>
           </div>
         </div>
@@ -88,8 +143,16 @@ function ApplyLoanPage() {
               Interest rates are calculated based on loan duration. Actual rates may vary after credit assessment.
             </p>
           </div>
-          <button className="btn-emerald w-full py-3">
-            Submit Application <ArrowRight className="w-4 h-4" />
+
+          {/* Tombol dimatikan (disabled) jika sedang mengirim data */}
+          <button
+            className="btn-emerald w-full py-3"
+            onClick={() => submitApplication()}
+            disabled={isPending}
+          >
+            {isPending ? "Processing..." : (
+              <>Submit Application <ArrowRight className="w-4 h-4" /></>
+            )}
           </button>
         </div>
       </div>

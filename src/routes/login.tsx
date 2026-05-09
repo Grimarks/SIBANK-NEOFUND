@@ -1,6 +1,11 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { Shield, Eye, EyeOff, ArrowRight } from "lucide-react";
+
+// --- Import Firebase Auth & Utilities ---
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -13,9 +18,39 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
+  const router = useRouter();
   const [showPass, setShowPass] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fungsi Login Firebase
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast.error("Mohon isi email dan password.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      toast.success("Login berhasil!");
+
+      // Jika berhasil, arahkan ke Dashboard
+      // (Bisa ditambahkan logika: jika email admin, arahkan ke /admin)
+      if (email.includes("admin")) {
+        router.navigate({ to: "/admin" });
+      } else {
+        router.navigate({ to: "/dashboard" });
+      }
+    } catch (error: any) {
+      console.error(error);
+      toast.error("Login gagal. Periksa kembali email dan password Anda.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex" style={{ background: "var(--background)" }}>
@@ -69,16 +104,16 @@ function LoginPage() {
           <h1 className="text-2xl font-bold mb-1">Welcome back</h1>
           <p className="text-sm mb-8" style={{ color: "var(--muted-foreground)" }}>Enter your credentials to access your account</p>
 
-          <div className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Email or Username</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="fintech-input" placeholder="you@example.com" />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="fintech-input" placeholder="you@example.com" required />
             </div>
             <div>
               <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Password</label>
               <div className="relative">
-                <input type={showPass ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} className="fintech-input pr-10" placeholder="••••••••" />
-                <button onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: "var(--muted-foreground)" }}>
+                <input type={showPass ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} className="fintech-input pr-10" placeholder="••••••••" required />
+                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: "var(--muted-foreground)" }}>
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
@@ -87,12 +122,12 @@ function LoginPage() {
               <label className="flex items-center gap-2 text-xs cursor-pointer">
                 <input type="checkbox" className="rounded" /> <span style={{ color: "var(--muted-foreground)" }}>Remember me</span>
               </label>
-              <button className="text-xs font-medium" style={{ color: "var(--emerald)" }}>Forgot password?</button>
+              <button type="button" className="text-xs font-medium" style={{ color: "var(--emerald)" }}>Forgot password?</button>
             </div>
 
-            <Link to="/dashboard" className="btn-primary mt-2">
-              Sign In <ArrowRight className="w-4 h-4" />
-            </Link>
+            <button type="submit" disabled={isLoading} className="btn-primary mt-2 w-full">
+              {isLoading ? "Signing in..." : <>Sign In <ArrowRight className="w-4 h-4" /></>}
+            </button>
 
             <div className="flex items-center gap-3 my-4">
               <div className="flex-1 h-px" style={{ background: "var(--border)" }} />
@@ -103,7 +138,7 @@ function LoginPage() {
             <Link to="/admin" className="btn-outline w-full justify-center">
               <Shield className="w-4 h-4" /> Admin Dashboard
             </Link>
-          </div>
+          </form>
 
           <p className="text-center text-xs mt-8" style={{ color: "var(--muted-foreground)" }}>
             Don't have an account?{" "}

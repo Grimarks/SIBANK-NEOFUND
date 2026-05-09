@@ -1,9 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts";
-import { monthlyRevenue, loanDistribution, formatCurrency } from "@/lib/dummy-data";
-import { Download, FileText, Calendar } from "lucide-react";
+import { formatCurrency } from "@/lib/dummy-data";
+import { Download, FileText, Calendar, AlertCircle } from "lucide-react";
 import { useState } from "react";
+
+// --- Import Firebase & React Query ---
+import { useQuery } from "@tanstack/react-query";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 export const Route = createFileRoute("/admin/reports")({
   component: ReportsPage,
@@ -16,8 +21,55 @@ const performanceData = [
   { month: "May", approval: 87, default: 2.5 }, { month: "Jun", approval: 92, default: 1.2 },
 ];
 
+interface MonthlyRevenue {
+  month: string;
+  revenue: number;
+  loans: number;
+}
+
+interface LoanDistribution {
+  name: string;
+  value: number;
+}
+
 function ReportsPage() {
   const [period, setPeriod] = useState("6m");
+
+  const { data: monthlyRevenue = [], isLoading: isRevLoading, isError: isRevError } = useQuery({
+    queryKey: ["monthlyRevenue"],
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, "monthlyRevenue"));
+      return snap.docs.map(doc => doc.data() as MonthlyRevenue);
+    },
+  });
+
+  const { data: loanDistribution = [], isLoading: isDistLoading, isError: isDistError } = useQuery({
+    queryKey: ["loanDistribution"],
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, "loanDistribution"));
+      return snap.docs.map(doc => doc.data() as LoanDistribution);
+    },
+  });
+
+  if (isRevLoading || isDistLoading) {
+    return (
+      <DashboardLayout role="admin" title="Reports & Analytics" subtitle="Comprehensive financial insights">
+        <div className="flex justify-center items-center h-64 animate-pulse text-muted-foreground">
+          Memuat data laporan...
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (isRevError || isDistError) {
+    return (
+      <DashboardLayout role="admin" title="Reports & Analytics" subtitle="Comprehensive financial insights">
+        <div className="flex justify-center items-center h-64 text-red-500 gap-2">
+          <AlertCircle className="w-5 h-5" /> Gagal memuat grafik laporan.
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout role="admin" title="Reports & Analytics" subtitle="Comprehensive financial insights">
@@ -25,8 +77,8 @@ function ReportsPage() {
         <div className="flex gap-2">
           {["1m", "3m", "6m", "1y"].map((p) => (
             <button key={p} onClick={() => setPeriod(p)}
-              className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${period === p ? "gradient-primary" : ""}`}
-              style={period === p ? { color: "var(--primary-foreground)" } : { background: "var(--secondary)", color: "var(--muted-foreground)" }}>
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${period === p ? "gradient-primary" : ""}`}
+                    style={period === p ? { color: "var(--primary-foreground)" } : { background: "var(--secondary)", color: "var(--muted-foreground)" }}>
               {p.toUpperCase()}
             </button>
           ))}
@@ -69,7 +121,7 @@ function ReportsPage() {
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie data={loanDistribution} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" paddingAngle={4}>
-                {loanDistribution.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
+                {loanDistribution.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
               </Pie>
               <Tooltip />
             </PieChart>
@@ -78,7 +130,7 @@ function ReportsPage() {
             {loanDistribution.map((d, i) => (
               <div key={d.name} className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full" style={{ background: COLORS[i] }} />
+                  <div className="w-2 h-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
                   <span>{d.name}</span>
                 </div>
                 <span className="font-medium">{d.value}%</span>

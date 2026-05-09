@@ -1,8 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { Users, CreditCard, DollarSign, Clock, TrendingUp, ArrowUpRight } from "lucide-react";
+import { Users, CreditCard, DollarSign, Clock, TrendingUp, ArrowUpRight, AlertCircle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
-import { monthlyRevenue, loanDistribution, adminLoans, adminCustomers, formatCurrency } from "@/lib/dummy-data";
+import { formatCurrency } from "@/lib/dummy-data";
+
+// --- Import Firebase & React Query ---
+import { useQuery } from "@tanstack/react-query";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 export const Route = createFileRoute("/admin/")({
   component: AdminDashboard,
@@ -15,7 +20,54 @@ const customerGrowth = [
   { month: "Apr", customers: 1100 }, { month: "May", customers: 1250 }, { month: "Jun", customers: 1380 },
 ];
 
+interface MonthlyRevenue {
+  month: string;
+  revenue: number;
+  loans: number;
+}
+
+interface LoanDistribution {
+  name: string;
+  value: number;
+}
+
 function AdminDashboard() {
+  const { data: monthlyRevenue = [], isLoading: isRevLoading } = useQuery({
+    queryKey: ["monthlyRevenue"],
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, "monthlyRevenue"));
+      return snap.docs.map(doc => doc.data() as MonthlyRevenue);
+    },
+  });
+
+  const { data: loanDistribution = [], isLoading: isDistLoading, isError } = useQuery({
+    queryKey: ["loanDistribution"],
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, "loanDistribution"));
+      return snap.docs.map(doc => doc.data() as LoanDistribution);
+    },
+  });
+
+  if (isRevLoading || isDistLoading) {
+    return (
+      <DashboardLayout role="admin" title="Admin Overview" subtitle="Welcome back, Admin">
+        <div className="flex justify-center items-center h-64 animate-pulse text-muted-foreground">
+          Memuat data statistik admin...
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (isError) {
+    return (
+      <DashboardLayout role="admin" title="Admin Overview" subtitle="Welcome back, Admin">
+        <div className="flex justify-center items-center h-64 text-red-500 gap-2">
+          <AlertCircle className="w-5 h-5" /> Gagal memuat data chart.
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   const stats = [
     { label: "Total Customers", value: "1,380", icon: Users, change: "+12%", color: "var(--primary)" },
     { label: "Active Loans", value: "234", icon: CreditCard, change: "+8%", color: "var(--emerald)" },
@@ -59,7 +111,7 @@ function AdminDashboard() {
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie data={loanDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={4}>
-                {loanDistribution.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
+                {loanDistribution.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
               </Pie>
               <Tooltip />
             </PieChart>
@@ -67,7 +119,7 @@ function AdminDashboard() {
           <div className="grid grid-cols-2 gap-2 mt-2">
             {loanDistribution.map((d, i) => (
               <div key={d.name} className="flex items-center gap-2 text-xs">
-                <div className="w-2 h-2 rounded-full" style={{ background: COLORS[i] }} />
+                <div className="w-2 h-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
                 <span style={{ color: "var(--muted-foreground)" }}>{d.name} ({d.value}%)</span>
               </div>
             ))}
