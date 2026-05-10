@@ -2,18 +2,19 @@ import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { CheckCircle, XCircle, Eye, AlertTriangle, Clock, Shield, AlertCircle } from "lucide-react";
-import { useState } from "react";
+import { useState, Fragment } from "react"; // Tambahkan Fragment di sini
 
 // --- Import Firebase & React Query ---
-import { useQuery } from "@tanstack/react-query";
-import { collection, getDocs } from "firebase/firestore";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/loans")({
   component: LoanApprovalPage,
 });
 
-const riskColors = { low: "badge-approved", medium: "badge-pending", high: "badge-rejected" };
+const riskColors: Record<string, string> = { low: "badge-approved", medium: "badge-pending", high: "badge-rejected" };
 
 interface AdminLoan {
   id: string;
@@ -21,22 +22,37 @@ interface AdminLoan {
   amount: number;
   duration: number;
   rate: number;
-  status: "approved" | "completed" | "pending" | "rejected";
-  riskLevel: "low" | "medium" | "high";
+  status: string;
+  riskLevel: string;
   appliedDate: string;
 }
 
 function LoanApprovalPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
+  const queryClient = useQueryClient();
 
   const { data: adminLoans = [], isLoading, isError } = useQuery({
     queryKey: ["adminLoans"],
     queryFn: async () => {
-      const snap = await getDocs(collection(db, "adminLoans"));
+      const snap = await getDocs(collection(db, "loans"));
       return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AdminLoan));
     },
   });
+
+  // FUNGSI UPDATE STATUS PINJAMAN
+  const updateLoanStatus = async (loanId: string, newStatus: string) => {
+    try {
+      await updateDoc(doc(db, "loans", loanId), {
+        status: newStatus
+      });
+      toast.success(`Pinjaman berhasil diubah menjadi ${newStatus.toUpperCase()}`);
+      queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
+    } catch (error) {
+      console.error(error);
+      toast.error("Gagal mengubah status pinjaman.");
+    }
+  };
 
   if (isLoading) {
     return (
@@ -85,24 +101,32 @@ function LoanApprovalPage() {
           </thead>
           <tbody>
           {filtered.map((loan) => (
-            <React.Fragment key={loan.id}>
+            <Fragment key={loan.id}> {/* Menggunakan Fragment di sini */}
               <tr>
-                <td className="font-medium">{loan.id}</td>
-                <td>{loan.customer}</td>
+                <td className="font-medium truncate max-w-[100px]">{loan.id}</td>
+                <td className="truncate max-w-[150px]">{loan.customer}</td>
                 <td className="font-semibold">{formatCurrency(loan.amount)}</td>
                 <td>{loan.duration}mo</td>
                 <td>{loan.rate}%</td>
-                <td><span className={`badge-status ${riskColors[loan.riskLevel]}`}>{loan.riskLevel}</span></td>
+                <td><span className={`badge-status ${riskColors[loan.riskLevel] || "badge-pending"}`}>{loan.riskLevel}</span></td>
                 <td><span className={`badge-status ${loan.status === "approved" ? "badge-approved" : loan.status === "pending" ? "badge-pending" : loan.status === "rejected" ? "badge-rejected" : "badge-completed"}`}>{loan.status}</span></td>
                 <td>
                   <div className="flex items-center gap-1">
                     <button onClick={() => setSelected(selected === loan.id ? null : loan.id)} className="btn-outline p-1.5"><Eye className="w-3.5 h-3.5" /></button>
                     {loan.status === "pending" && (
                       <>
-                        <button className="p-1.5 rounded-md transition-colors" style={{ background: "color-mix(in oklch, var(--emerald) 15%, transparent)", color: "var(--emerald)" }}>
+                        <button
+                          onClick={() => updateLoanStatus(loan.id, "approved")}
+                          className="p-1.5 rounded-md transition-colors"
+                          style={{ background: "color-mix(in oklch, var(--emerald) 15%, transparent)", color: "var(--emerald)" }}
+                        >
                           <CheckCircle className="w-3.5 h-3.5" />
                         </button>
-                        <button className="p-1.5 rounded-md transition-colors" style={{ background: "color-mix(in oklch, var(--destructive) 15%, transparent)", color: "var(--destructive)" }}>
+                        <button
+                          onClick={() => updateLoanStatus(loan.id, "rejected")}
+                          className="p-1.5 rounded-md transition-colors"
+                          style={{ background: "color-mix(in oklch, var(--destructive) 15%, transparent)", color: "var(--destructive)" }}
+                        >
                           <XCircle className="w-3.5 h-3.5" />
                         </button>
                       </>
@@ -145,7 +169,7 @@ function LoanApprovalPage() {
                   </td>
                 </tr>
               )}
-            </React.Fragment>
+            </Fragment>
           ))}
           {filtered.length === 0 && (
             <tr><td colSpan={8} className="text-center py-4 text-sm text-muted-foreground">Tidak ada pinjaman</td></tr>

@@ -1,9 +1,37 @@
 import { Bell, Search, Moon, Sun, Menu } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { auth, db } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
 export function TopNav({ title, subtitle, onMenuClick }: { title: string; subtitle?: string; onMenuClick?: () => void }) {
   const [dark, setDark] = useState(false);
   const [showNotif, setShowNotif] = useState(false);
+  const [initials, setInitials] = useState("U"); // Default "User"
+
+  useEffect(() => {
+    // Ambil inisial nama secara real-time
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const docRef = doc(db, "adminCustomers", user.uid);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists() && docSnap.data().name) {
+            const name = docSnap.data().name;
+            const inisial = name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase();
+            setInitials(inisial);
+          } else {
+            // Jika tidak ada nama, gunakan huruf depan email
+            setInitials(user.email?.charAt(0).toUpperCase() || "U");
+          }
+        } catch (error) {
+          console.error("Gagal memuat profil TopNav", error);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const toggleDark = () => {
     setDark(!dark);
@@ -13,7 +41,6 @@ export function TopNav({ title, subtitle, onMenuClick }: { title: string; subtit
   return (
     <header className="h-16 flex items-center justify-between px-4 md:px-6 border-b" style={{ borderColor: "var(--border)" }}>
       <div className="flex items-center gap-3">
-        {/* Hamburger — mobile only */}
         <button onClick={onMenuClick} className="btn-outline p-2 md:hidden">
           <Menu className="w-5 h-5" />
         </button>
@@ -44,7 +71,9 @@ export function TopNav({ title, subtitle, onMenuClick }: { title: string; subtit
             </div>
           )}
         </div>
-        <div className="w-8 h-8 rounded-full gradient-primary flex items-center justify-center text-xs font-bold" style={{ color: "var(--primary-foreground)" }}>A</div>
+        <div className="w-8 h-8 rounded-full gradient-primary flex items-center justify-center text-xs font-bold" style={{ color: "var(--primary-foreground)" }}>
+          {initials}
+        </div>
       </div>
     </header>
   );

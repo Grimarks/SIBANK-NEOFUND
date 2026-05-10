@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Users, CreditCard, DollarSign, Clock, TrendingUp, ArrowUpRight, AlertCircle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 
 // --- Import Firebase & React Query ---
 import { useQuery } from "@tanstack/react-query";
@@ -20,31 +20,40 @@ const customerGrowth = [
   { month: "Apr", customers: 1100 }, { month: "May", customers: 1250 }, { month: "Jun", customers: 1380 },
 ];
 
-interface MonthlyRevenue {
-  month: string;
-  revenue: number;
-  loans: number;
-}
-
-interface LoanDistribution {
-  name: string;
-  value: number;
-}
-
 function AdminDashboard() {
+  // 1. Fetch Revenue
   const { data: monthlyRevenue = [], isLoading: isRevLoading } = useQuery({
     queryKey: ["monthlyRevenue"],
     queryFn: async () => {
       const snap = await getDocs(collection(db, "monthlyRevenue"));
-      return snap.docs.map(doc => doc.data() as MonthlyRevenue);
+      return snap.docs.map(doc => doc.data() as any);
     },
   });
 
+  // 2. Fetch Distribution
   const { data: loanDistribution = [], isLoading: isDistLoading, isError } = useQuery({
     queryKey: ["loanDistribution"],
     queryFn: async () => {
       const snap = await getDocs(collection(db, "loanDistribution"));
-      return snap.docs.map(doc => doc.data() as LoanDistribution);
+      return snap.docs.map(doc => doc.data() as any);
+    },
+  });
+
+  // 3. Fetch Loans untuk Statistik
+  const { data: allLoans = [] } = useQuery({
+    queryKey: ["adminAllLoans"],
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, "loans"));
+      return snap.docs.map(doc => doc.data());
+    },
+  });
+
+  // 4. Fetch Customers untuk Statistik
+  const { data: allCustomers = [] } = useQuery({
+    queryKey: ["adminAllCustomers"],
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, "adminCustomers"));
+      return snap.docs.map(doc => doc.data());
     },
   });
 
@@ -68,12 +77,21 @@ function AdminDashboard() {
     );
   }
 
+  // --- MENGHITUNG STATISTIK ASLI DARI DATABASE ---
+  const activeLoansCount = allLoans.filter(l => l.status === "approved").length;
+  const pendingRequestsCount = allLoans.filter(l => l.status === "pending").length;
+  const totalCustomersCount = allCustomers.length;
+
   const stats = [
-    { label: "Total Customers", value: "1,380", icon: Users, change: "+12%", color: "var(--primary)" },
-    { label: "Active Loans", value: "234", icon: CreditCard, change: "+8%", color: "var(--emerald)" },
-    { label: "Monthly Revenue", value: formatCurrency(18200000), icon: DollarSign, change: "+15%", color: "var(--info)" },
-    { label: "Pending Requests", value: "12", icon: Clock, change: "-3", color: "var(--warning)" },
+    { label: "Total Customers", value: totalCustomersCount.toString(), icon: Users, change: "Real-time", color: "var(--primary)" },
+    { label: "Active Loans", value: activeLoansCount.toString(), icon: CreditCard, change: "Real-time", color: "var(--emerald)" },
+    { label: "Monthly Revenue", value: formatCurrency(18200000), icon: DollarSign, change: "Estimated", color: "var(--info)" },
+    { label: "Pending Requests", value: pendingRequestsCount.toString(), icon: Clock, change: "Requires Action", color: "var(--warning)" },
   ];
+
+  // Placeholder agar Grafik tidak crash jika Firebase kosong
+  const chartRevenue = monthlyRevenue.length > 0 ? monthlyRevenue : [{ month: "Jan", revenue: 0 }, { month: "Feb", revenue: 0 }];
+  const chartDist = loanDistribution.length > 0 ? loanDistribution : [{ name: "Belum Ada Data", value: 100 }];
 
   return (
     <DashboardLayout role="admin" title="Admin Overview" subtitle="Welcome back, Admin">
@@ -84,8 +102,8 @@ function AdminDashboard() {
               <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `color-mix(in oklch, ${s.color} 15%, transparent)` }}>
                 <s.icon className="w-5 h-5" style={{ color: s.color }} />
               </div>
-              <span className="badge-status badge-approved flex items-center gap-1">
-                <TrendingUp className="w-3 h-3" /> {s.change}
+              <span className="badge-status badge-pending flex items-center gap-1">
+                {s.change}
               </span>
             </div>
             <p className="text-xl font-bold">{s.value}</p>
@@ -98,7 +116,7 @@ function AdminDashboard() {
         <div className="lg:col-span-2 stat-card">
           <h3 className="font-semibold mb-4">Revenue Overview</h3>
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={monthlyRevenue}>
+            <BarChart data={chartRevenue}>
               <XAxis dataKey="month" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`} />
               <Tooltip formatter={(v) => formatCurrency(Number(v))} />
@@ -110,14 +128,14 @@ function AdminDashboard() {
           <h3 className="font-semibold mb-4">Loan Distribution</h3>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
-              <Pie data={loanDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={4}>
-                {loanDistribution.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              <Pie data={chartDist} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={4}>
+                {chartDist.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
               </Pie>
               <Tooltip />
             </PieChart>
           </ResponsiveContainer>
           <div className="grid grid-cols-2 gap-2 mt-2">
-            {loanDistribution.map((d, i) => (
+            {chartDist.map((d: any, i: number) => (
               <div key={d.name} className="flex items-center gap-2 text-xs">
                 <div className="w-2 h-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
                 <span style={{ color: "var(--muted-foreground)" }}>{d.name} ({d.value}%)</span>
@@ -147,24 +165,16 @@ function AdminDashboard() {
         </div>
         <div className="stat-card">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold">Recent Activity</h3>
-            <button className="text-xs font-medium flex items-center gap-1" style={{ color: "var(--emerald)" }}>View all <ArrowUpRight className="w-3 h-3" /></button>
+            <h3 className="font-semibold">System Notes</h3>
           </div>
           <div className="space-y-3">
-            {[
-              { text: "New loan application from Dewi Lestari", time: "2 hours ago", badge: "badge-pending" },
-              { text: "Payment verified for Ahmad Rizki", time: "5 hours ago", badge: "badge-approved" },
-              { text: "Loan LN-2024-005 rejected", time: "1 day ago", badge: "badge-rejected" },
-              { text: "New customer registration: Eko Prasetyo", time: "2 days ago", badge: "badge-completed" },
-            ].map((a, i) => (
-              <div key={i} className="flex items-start gap-3 py-2 border-b last:border-0" style={{ borderColor: "var(--border)" }}>
-                <div className={`w-2 h-2 rounded-full mt-1.5 ${a.badge}`} />
-                <div className="flex-1">
-                  <p className="text-sm">{a.text}</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--muted-foreground)" }}>{a.time}</p>
-                </div>
+            <div className="flex items-start gap-3 py-2 border-b last:border-0" style={{ borderColor: "var(--border)" }}>
+              <div className={`w-2 h-2 rounded-full mt-1.5 badge-approved`} />
+              <div className="flex-1">
+                <p className="text-sm">Sistem telah terhubung ke Firebase Firestore secara Real-Time.</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--muted-foreground)" }}>Active</p>
               </div>
-            ))}
+            </div>
           </div>
         </div>
       </div>

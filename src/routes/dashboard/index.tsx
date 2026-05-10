@@ -1,8 +1,23 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { TrendingUp, TrendingDown, CreditCard, Calendar, DollarSign, Activity, ArrowUpRight, Clock, AlertCircle, Plus } from "lucide-react";
+import {
+  TrendingUp,
+  TrendingDown,
+  CreditCard,
+  Calendar,
+  DollarSign,
+  Activity,
+  ArrowUpRight,
+  Clock,
+  AlertCircle,
+  Plus,
+  BarChart3 // Tambahan icon untuk empty state
+} from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { useMemo } from "react"; // Tambahan useMemo
+
+// --- Import Firebase & React Query ---
 import { useQuery } from "@tanstack/react-query";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
@@ -11,6 +26,7 @@ export const Route = createFileRoute("/dashboard/")({
   component: CustomerDashboard,
 });
 
+// Data chart placeholder jika belum ada data asli
 const emptyChartData = [
   { month: "Jan", balance: 0 }, { month: "Feb", balance: 0 },
   { month: "Mar", balance: 0 }, { month: "Apr", balance: 0 },
@@ -41,10 +57,10 @@ interface Transaction {
 
 function CustomerDashboard() {
   const { data: customerLoans = [], isLoading: isLoansLoading } = useQuery({
-    queryKey: ["loans", auth.currentUser?.uid], // Query key disamakan
+    queryKey: ["loans", auth.currentUser?.uid],
     queryFn: async () => {
       if (!auth.currentUser) return [];
-      const q = query(collection(db, "loans"), where("userId", "==", auth.currentUser.uid)); // Mengambil dari koleksi 'loans'
+      const q = query(collection(db, "loans"), where("userId", "==", auth.currentUser.uid));
       const snap = await getDocs(q);
       return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CustomerLoan));
     },
@@ -84,6 +100,24 @@ function CustomerDashboard() {
 
   const activeLoan = customerLoans.find((l) => l.status === "approved");
 
+  // LOGIKA 1: Membuat Data Grafik Proyeksi Dinamis 6 Bulan ke Depan
+  const chartData = useMemo(() => {
+    if (!activeLoan) return emptyChartData; // Pakai dummy jika kosong
+
+    let currentBal = activeLoan.remainingBalance;
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const startMonth = new Date().getMonth(); // Bulan ini
+
+    return Array.from({ length: 6 }).map((_, i) => {
+      const val = Math.max(0, currentBal);
+      currentBal -= activeLoan.monthlyPayment; // Kurangi saldo setiap bulan
+      return {
+        month: months[(startMonth + i) % 12],
+        balance: val
+      };
+    });
+  }, [activeLoan]);
+
   const stats = [
     { label: "Active Loans", value: customerLoans.filter(l => l.status === "approved").length.toString(), icon: CreditCard, change: "+0%", up: true, color: "var(--primary)" },
     { label: "Remaining Balance", value: formatCurrency(activeLoan?.remainingBalance || 0), icon: DollarSign, change: "-0%", up: false, color: "var(--emerald)" },
@@ -111,29 +145,56 @@ function CustomerDashboard() {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 stat-card">
-          <h3 className="font-semibold mb-4">Loan Balance Trend</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={customerLoans.length > 0 ? emptyChartData : emptyChartData}>
-              <defs>
-                <linearGradient id="colorBal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="oklch(0.55 0.17 160)" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="oklch(0.55 0.17 160)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="month" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`} />
-              <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-              <Area type="monotone" dataKey="balance" stroke="oklch(0.55 0.17 160)" fill="url(#colorBal)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
+        {/* Chart Section */}
+        <div className="lg:col-span-2 stat-card relative overflow-hidden">
+          <h3 className="font-semibold mb-4">Loan Balance Projection</h3>
+
+          <div className="relative">
+            <ResponsiveContainer width="100%" height={240}>
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorBal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="oklch(0.55 0.17 160)" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="oklch(0.55 0.17 160)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="month" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`} />
+                <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+                <Area
+                  type="monotone"
+                  dataKey="balance"
+                  stroke="oklch(0.55 0.17 160)"
+                  fill="url(#colorBal)"
+                  strokeWidth={2}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+
+            {/* LOGIKA 2: OVERLAY BLUR JIKA TIDAK ADA PINJAMAN AKTIF */}
+            {!activeLoan && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/40 backdrop-blur-[2px] rounded-xl border border-dashed" style={{ borderColor: "var(--border)" }}>
+                <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ background: "var(--secondary)" }}>
+                  <BarChart3 className="w-5 h-5 opacity-50" style={{ color: "var(--foreground)" }} />
+                </div>
+                <p className="text-sm font-semibold">Proyeksi Saldo Terkunci</p>
+                <p className="text-xs text-center max-w-[250px] mt-1" style={{ color: "var(--muted-foreground)" }}>
+                  Grafik prediksi pelunasan akan muncul di sini setelah Anda memiliki pinjaman aktif.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="stat-card flex flex-col h-full">
           <h3 className="font-semibold mb-4">Upcoming Payment</h3>
+
           {activeLoan ? (
             <>
-              <div className="rounded-xl p-4 mb-4 gradient-primary" style={{ color: "var(--primary-foreground)" }}>
+              <div
+                className="rounded-xl p-4 mb-4 gradient-primary"
+                style={{ color: "var(--primary-foreground)" }}
+              >
                 <p className="text-xs opacity-70 mb-1">Next installment</p>
                 <p className="text-2xl font-bold">{formatCurrency(activeLoan.monthlyPayment)}</p>
                 <div className="flex items-center gap-2 mt-3 text-xs opacity-80">
@@ -146,7 +207,10 @@ function CustomerDashboard() {
                   <span className="font-medium">{activeLoan.paid} of {activeLoan.total}</span>
                 </div>
                 <div className="w-full h-2 rounded-full" style={{ background: "var(--secondary)" }}>
-                  <div className="h-2 rounded-full gradient-emerald" style={{ width: `${(activeLoan.paid / activeLoan.total) * 100}%` }} />
+                  <div
+                    className="h-2 rounded-full gradient-emerald"
+                    style={{ width: `${(activeLoan.paid / activeLoan.total) * 100}%` }}
+                  />
                 </div>
                 <div className="flex justify-between text-sm">
                   <span style={{ color: "var(--muted-foreground)" }}>Loan ID</span>
@@ -163,7 +227,10 @@ function CustomerDashboard() {
               <p className="text-xs text-muted-foreground mb-6">
                 Ajukan pinjaman pertama Anda dan kelola keuangan dengan lebih cerdas.
               </p>
-              <Link to="/dashboard/apply" className="btn-emerald w-full py-2.5 text-xs flex items-center justify-center gap-2">
+              <Link
+                to="/dashboard/apply"
+                className="btn-emerald w-full py-2.5 text-xs flex items-center justify-center gap-2"
+              >
                 <Plus className="w-4 h-4" /> Ajukan Pinjaman
               </Link>
             </div>
@@ -174,14 +241,23 @@ function CustomerDashboard() {
       <div className="stat-card mt-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold">Recent Transactions</h3>
-          <Link to="/dashboard/payments" className="text-xs font-medium flex items-center gap-1" style={{ color: "var(--emerald)" }}>
+          <Link
+            to="/dashboard/payments"
+            className="text-xs font-medium flex items-center gap-1"
+            style={{ color: "var(--emerald)" }}
+          >
             View all <ArrowUpRight className="w-3 h-3" />
           </Link>
         </div>
         <div className="overflow-x-auto">
           <table className="data-table">
             <thead>
-            <tr><th>Date</th><th>Description</th><th>Amount</th><th>Type</th></tr>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Amount</th>
+              <th>Type</th>
+            </tr>
             </thead>
             <tbody>
             {recentTransactions.slice(0, 5).map((t) => (
@@ -195,7 +271,11 @@ function CustomerDashboard() {
               </tr>
             ))}
             {recentTransactions.length === 0 && (
-              <tr><td colSpan={4} className="text-center py-8 text-sm text-muted-foreground">Belum ada riwayat transaksi.</td></tr>
+              <tr>
+                <td colSpan={4} className="text-center py-8 text-sm text-muted-foreground">
+                  Belum ada riwayat transaksi.
+                </td>
+              </tr>
             )}
             </tbody>
           </table>

@@ -1,22 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Upload, Download, CreditCard, Calendar, CheckCircle, AlertCircle } from "lucide-react";
+import { Upload, Download, CreditCard, Calendar, CheckCircle, AlertCircle, Clock, XCircle } from "lucide-react";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { collection, getDocs, query, where } from "firebase/firestore";
+
+// --- Import Firebase & React Query ---
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { collection, getDocs, query, where, addDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard/payments")({
   component: PaymentsPage,
 });
 
-interface Transaction {
+interface PaymentRecord {
   id: string;
   date: string;
-  description: string;
+  loanId: string;
   amount: number;
-  type: string;
+  status: "verified" | "pending" | "rejected" | "overdue";
 }
 
 interface CustomerLoan {
@@ -36,16 +39,20 @@ interface CustomerLoan {
 function PaymentsPage() {
   const [showPay, setShowPay] = useState(false);
   const [selectedLoanId, setSelectedLoanId] = useState("");
+  const queryClient = useQueryClient();
 
-  const { data: recentTransactions = [], isLoading: isTxLoading, isError: isTxError } = useQuery({
-    queryKey: ["recentTransactions", auth.currentUser?.uid],
+  // 1. Fetching Payment Records (Bukan recentTransactions, agar ada status pending/verified)
+  const { data: paymentRecords = [], isLoading: isPayLoading, isError: isPayError } = useQuery({
+    queryKey: ["userPaymentRecords", auth.currentUser?.uid],
     queryFn: async () => {
       if (!auth.currentUser) return [];
-      const q = query(collection(db, "recentTransactions"), where("userId", "==", auth.currentUser.uid));
+      const q = query(collection(db, "paymentRecords"), where("userId", "==", auth.currentUser.uid));
       const querySnapshot = await getDocs(q);
-      const txData: Transaction[] = [];
-      querySnapshot.forEach((doc) => txData.push({ id: doc.id, ...doc.data() } as Transaction));
-      return txData;
+      const payData: PaymentRecord[] = [];
+      querySnapshot.forEach((doc) => payData.push({ id: doc.id, ...doc.data() } as PaymentRecord));
+
+      // Urutkan dari yang terbaru
+      return payData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     },
     enabled: !!auth.currentUser,
   });
@@ -61,29 +68,50 @@ function PaymentsPage() {
     enabled: !!auth.currentUser,
   });
 
-  if (isTxLoading || isLoansLoading) {
-    return (
-      <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments">
-        <div className="flex justify-center items-center h-40 animate-pulse">
-          <p style={{ color: "var(--muted-foreground)" }}>Memuat data pembayaran...</p>
-        </div>
-      </DashboardLayout>
-    );
-  }
-
-  if (isTxError) {
-    return (
-      <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments">
-        <div className="flex justify-center items-center h-40 text-red-500 gap-2">
-          <AlertCircle className="w-5 h-5" />
-          <p>Gagal memuat data dari database.</p>
-        </div>
-      </DashboardLayout>
-    );
-  }
-
   const activeLoans = customerLoans.filter((l) => l.status === "approved");
-  const activeLoan = activeLoans.length > 0 ? activeLoans[0] : null;
+  const activeLoan = activeLoans.find(l => l.id === selectedLoanId) || (activeLoans.length > 0 ? activeLoans[0] : null);
+
+  // FUNGSI SUBMIT PEMBAYARAN KE ADMIN
+  const { mutate: submitPayment, isPending: isSubmitting } = useMutation({
+    mutationFn: async () => {
+      if (!auth.currentUser || !selectedLoanId || !activeLoan) throw new Error("Invalid request");
+      const today = new Date().toISOString().split("T")[0];
+
+      // 1. Masukkan ke Payment Records untuk diverifikasi Admin (Status PENDING)
+      await addDoc(collection(db, "paymentRecords"), {
+        userId: auth.currentUser.uid,
+        customer: auth.currentUser.email, // Idealnya pakai nama
+        loanId: selectedLoanId,
+        amount: activeLoan.monthlyPayment,
+        date: today,
+        status: "pending",
+        proofUploaded: true
+      });
+
+      // 2. Masukkan ke riwayat transaksi Customer
+      await addDoc(collection(db, "recentTransactions"), {
+        userId: auth.currentUser.uid,
+        date: today,
+        description: `Installment Payment - ${selectedLoanId.substring(0, 6)}...`,
+        amount: -(activeLoan.monthlyPayment),
+        type: "payment"
+      });
+    },
+    onSuccess: () => {
+      toast.success("Pembayaran berhasil dikirim! Menunggu verifikasi admin.");
+      setShowPay(false);
+      // Refresh tabel paymentRecords
+      queryClient.invalidateQueries({ queryKey: ["userPaymentRecords"] });
+      // Refresh dashboard (optional)
+      queryClient.invalidateQueries({ queryKey: ["recentTransactions"] });
+    },
+    onError: () => {
+      toast.error("Gagal mengirim pembayaran.");
+    }
+  });
+
+  if (isPayLoading || isLoansLoading) return <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments"><div className="flex justify-center items-center h-40 animate-pulse text-muted-foreground">Memuat data pembayaran...</div></DashboardLayout>;
+  if (isPayError) return <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments"><div className="flex justify-center items-center h-40 text-red-500 gap-2"><AlertCircle className="w-5 h-5" /> Gagal memuat data.</div></DashboardLayout>;
 
   const nextPaymentAmount = activeLoan?.monthlyPayment || 0;
   const remainingBalance = activeLoan?.remainingBalance || 0;
@@ -102,27 +130,23 @@ function PaymentsPage() {
         <div className="stat-card">
           <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Total Paid</p>
           <p className="text-2xl font-bold">{formatCurrency(activeLoan ? (activeLoan.paid * activeLoan.monthlyPayment) : 0)}</p>
-          <p className="text-xs mt-1" style={{ color: "var(--emerald)" }}>
-            {activeLoan?.paid || 0} installments completed
-          </p>
+          <p className="text-xs mt-1" style={{ color: "var(--emerald)" }}>{activeLoan?.paid || 0} installments completed</p>
         </div>
         <div className="stat-card">
           <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Remaining</p>
           <p className="text-2xl font-bold">{formatCurrency(remainingBalance)}</p>
-          <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>
-            {activeLoan ? activeLoan.total - activeLoan.paid : 0} installments left
-          </p>
+          <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>{activeLoan ? activeLoan.total - activeLoan.paid : 0} installments left</p>
         </div>
       </div>
 
       <div className="flex gap-3 mb-6">
-        <button onClick={() => setShowPay(!showPay)} className="btn-emerald" disabled={!activeLoan}>
+        <button onClick={() => setShowPay(!showPay)} className="btn-emerald" disabled={activeLoans.length === 0}>
           <CreditCard className="w-4 h-4" /> Pay Installment
         </button>
         <button className="btn-outline"><Download className="w-4 h-4" /> Download Invoice</button>
       </div>
 
-      {showPay && activeLoan && (
+      {showPay && activeLoans.length > 0 && (
         <div className="stat-card mb-6 animate-scale-in">
           <h3 className="font-semibold mb-4">Pay Installment</h3>
           <div className="grid md:grid-cols-2 gap-4">
@@ -135,36 +159,45 @@ function PaymentsPage() {
             </div>
             <div>
               <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Amount</label>
-              <input className="fintech-input" value={selectedLoanId ? formatCurrency(activeLoans.find(l => l.id === selectedLoanId)?.monthlyPayment || 0) : "Rp 0"} readOnly />
+              <input className="fintech-input" value={selectedLoanId ? formatCurrency(activeLoan?.monthlyPayment || 0) : "Rp 0"} readOnly />
             </div>
           </div>
           <div className="mt-4">
             <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Upload Payment Proof</label>
-            <div className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer" style={{ borderColor: "var(--border)" }}>
+            <div className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-emerald transition-colors" style={{ borderColor: "var(--border)" }}>
               <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: "var(--muted-foreground)" }} />
               <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Click to upload receipt or proof of transfer</p>
             </div>
           </div>
-          <button className="btn-emerald mt-4"><CheckCircle className="w-4 h-4" /> Submit Payment</button>
+          <button onClick={() => submitPayment()} disabled={isSubmitting || !selectedLoanId} className="btn-emerald mt-4">
+            {isSubmitting ? "Memproses..." : <><CheckCircle className="w-4 h-4" /> Submit Payment</>}
+          </button>
         </div>
       )}
 
       <div className="stat-card overflow-x-auto">
         <h3 className="font-semibold mb-4">Payment History</h3>
         <table className="data-table">
-          <thead>
-          <tr><th>Date</th><th>Description</th><th>Amount</th><th>Status</th></tr>
-          </thead>
+          <thead><tr><th>Date</th><th>Loan ID</th><th>Amount</th><th>Status</th></tr></thead>
           <tbody>
-          {recentTransactions.filter((t) => t.type === "payment").map((t) => (
-            <tr key={t.id}>
-              <td>{formatDate(t.date)}</td>
-              <td>{t.description}</td>
-              <td className="font-semibold">{formatCurrency(Math.abs(t.amount))}</td>
-              <td><span className="badge-status badge-approved">Verified</span></td>
+          {paymentRecords.map((p) => (
+            <tr key={p.id}>
+              <td>{formatDate(p.date)}</td>
+              <td className="truncate max-w-[120px]" title={p.loanId}>{p.loanId}</td>
+              <td className="font-semibold">{formatCurrency(p.amount)}</td>
+              <td>
+                <span className={`badge-status flex items-center w-max gap-1 ${
+                  p.status === "verified" ? "badge-approved" :
+                    p.status === "rejected" ? "badge-rejected" : "badge-pending"
+                }`}>
+                  {p.status === "verified" ? <CheckCircle className="w-3 h-3"/> :
+                    p.status === "rejected" ? <XCircle className="w-3 h-3"/> : <Clock className="w-3 h-3"/>}
+                  <span className="capitalize">{p.status}</span>
+                </span>
+              </td>
             </tr>
           ))}
-          {recentTransactions.filter((t) => t.type === "payment").length === 0 && (
+          {paymentRecords.length === 0 && (
             <tr><td colSpan={4} className="text-center py-4 text-sm text-muted-foreground">Belum ada riwayat pembayaran.</td></tr>
           )}
           </tbody>

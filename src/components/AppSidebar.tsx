@@ -34,17 +34,20 @@ export function AppSidebar({ role, mobileOpen, onMobileClose }: { role: "custome
   const router = useRouter();
   const nav = role === "admin" ? adminNav : customerNav;
 
+  // PERBAIKAN LOGIKA HIGHLIGHT
   const isActive = (path: string) => {
-    if (role === "admin" && path === "/admin") return currentPath === "/admin";
-    if (role === "customer" && path === "/dashboard") return currentPath === "/dashboard";
-    return currentPath.startsWith(path) && path !== "/dashboard" && path !== "/admin";
+    // Khusus dashboard/overview, hanya nyala jika path persis
+    if (path === "/dashboard") return currentPath === "/dashboard" || currentPath === "/dashboard/";
+    if (path === "/admin") return currentPath === "/admin" || currentPath === "/admin/";
+
+    // Untuk menu lain, cek apakah path saat ini menunjuk ke sub-menu tersebut
+    return currentPath.startsWith(path);
   };
 
   useEffect(() => {
     if (onMobileClose) onMobileClose();
   }, [currentPath]);
 
-  // Fungsi Logout
   const handleLogout = async (e: React.MouseEvent) => {
     e.preventDefault();
     try {
@@ -91,16 +94,24 @@ export function AppSidebar({ role, mobileOpen, onMobileClose }: { role: "custome
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {nav.map((item) => (
-            <Link key={item.to} to={item.to} className={`sidebar-nav-item ${isActive(item.to) ? "active" : ""} ${collapsed ? "md:justify-center md:px-0" : ""}`}>
-              <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
-              {(!collapsed || mobileOpen) && <span>{item.label}</span>}
-            </Link>
-          ))}
+          {nav.map((item) => {
+            const active = isActive(item.to);
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                // Mencegah TanStack Router melakukan auto-highlight yang salah
+                activeOptions={{ exact: item.to === "/dashboard" || item.to === "/admin" }}
+                className={`sidebar-nav-item ${active ? "active" : ""} ${collapsed ? "md:justify-center md:px-0" : ""}`}
+              >
+                <item.icon className="w-[18px] h-[18px] flex-shrink-0" />
+                {(!collapsed || mobileOpen) && <span>{item.label}</span>}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="px-3 pb-4 space-y-2">
-          {/* Tombol Logout */}
           <a href="#" onClick={handleLogout} className={`sidebar-nav-item ${collapsed ? "md:justify-center md:px-0" : ""}`}>
             <LogOut className="w-[18px] h-[18px] flex-shrink-0" />
             {(!collapsed || mobileOpen) && <span>Logout</span>}
