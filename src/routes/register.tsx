@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Shield, Eye, EyeOff, ArrowRight, Upload } from "lucide-react";
 
 // --- Import Firebase Auth & Firestore ---
-import { createUserWithEmailAndPassword, signOut } from "firebase/auth"; // Tambahkan signOut
+import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { toast } from "sonner";
@@ -32,9 +32,17 @@ function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  // STATE UNTUK GIMMICK KTP
+  const [ktpFileName, setKtpFileName] = useState("");
+
   const handleNextStep = () => {
     if (!name || !email || !phone || !address) {
       toast.error("Mohon lengkapi semua data personal.");
+      return;
+    }
+    // WAJIB UPLOAD (Gimmick)
+    if (!ktpFileName) {
+      toast.error("Mohon unggah foto KTP / ID Card Anda.");
       return;
     }
     setStep(2);
@@ -52,11 +60,9 @@ function RegisterPage() {
 
     setIsLoading(true);
     try {
-      // 1. Buat user di Firebase Authentication (Firebase otomatis melakukan login setelah ini)
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // 2. Simpan profil user ke koleksi adminCustomers di Firestore
       await setDoc(doc(db, "adminCustomers", user.uid), {
         id: user.uid,
         name: name,
@@ -67,13 +73,13 @@ function RegisterPage() {
         totalLoans: 0,
         creditScore: 650,
         joinDate: new Date().toISOString().split("T")[0],
-        verified: false, // Default false
+        verified: false,
       });
 
-      // 3. Paksa keluar (Sign Out) agar tidak otomatis masuk ke Dashboard
       await signOut(auth);
-      toast.success("Akun berhasil dibuat!");
-      router.navigate({ to: "/pending-verification" });
+
+      toast.success("Pendaftaran berhasil! Harap Tunggu Verifikasi Data 1 x 24 Jam.");
+      router.navigate({ to: "/pending-verification" }); // Langsung arahkan ke halaman pending
 
     } catch (error: any) {
       console.error(error);
@@ -156,14 +162,37 @@ function RegisterPage() {
                 <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Address</label>
                 <textarea className="fintech-input" rows={2} placeholder="Your full address" value={address} onChange={(e) => setAddress(e.target.value)} required />
               </div>
+
+              {/* UPLOAD KTP GIMMICK */}
               <div>
                 <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Upload KTP / ID Card</label>
-                <div className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors hover:border-emerald" style={{ borderColor: "var(--border)" }}>
-                  <Upload className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--muted-foreground)" }} />
-                  <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Click or drag & drop your ID card</p>
-                  <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)", opacity: 0.6 }}>PNG, JPG up to 5MB</p>
-                </div>
+                <label
+                  className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors hover:border-emerald block"
+                  style={{ borderColor: ktpFileName ? "var(--emerald)" : "var(--border)" }}
+                >
+                  {/* File input tersembunyi */}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setKtpFileName(e.target.files[0].name);
+                      }
+                    }}
+                  />
+                  <Upload className="w-8 h-8 mx-auto mb-2" style={{ color: ktpFileName ? "var(--emerald)" : "var(--muted-foreground)" }} />
+                  {ktpFileName ? (
+                    <p className="text-sm font-medium" style={{ color: "var(--emerald)" }}>{ktpFileName}</p>
+                  ) : (
+                    <>
+                      <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Click or drag & drop your ID card</p>
+                      <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)", opacity: 0.6 }}>PNG, JPG up to 5MB</p>
+                    </>
+                  )}
+                </label>
               </div>
+
               <button onClick={handleNextStep} className="btn-primary w-full">
                 Continue <ArrowRight className="w-4 h-4" />
               </button>

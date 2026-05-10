@@ -39,9 +39,10 @@ interface CustomerLoan {
 function PaymentsPage() {
   const [showPay, setShowPay] = useState(false);
   const [selectedLoanId, setSelectedLoanId] = useState("");
+  // STATE UNTUK GIMMICK BUKTI TRANSFER
+  const [paymentProofName, setPaymentProofName] = useState("");
   const queryClient = useQueryClient();
 
-  // 1. Fetching Payment Records (Bukan recentTransactions, agar ada status pending/verified)
   const { data: paymentRecords = [], isLoading: isPayLoading, isError: isPayError } = useQuery({
     queryKey: ["userPaymentRecords", auth.currentUser?.uid],
     queryFn: async () => {
@@ -51,7 +52,6 @@ function PaymentsPage() {
       const payData: PaymentRecord[] = [];
       querySnapshot.forEach((doc) => payData.push({ id: doc.id, ...doc.data() } as PaymentRecord));
 
-      // Urutkan dari yang terbaru
       return payData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     },
     enabled: !!auth.currentUser,
@@ -71,16 +71,14 @@ function PaymentsPage() {
   const activeLoans = customerLoans.filter((l) => l.status === "approved");
   const activeLoan = activeLoans.find(l => l.id === selectedLoanId) || (activeLoans.length > 0 ? activeLoans[0] : null);
 
-  // FUNGSI SUBMIT PEMBAYARAN KE ADMIN
   const { mutate: submitPayment, isPending: isSubmitting } = useMutation({
     mutationFn: async () => {
       if (!auth.currentUser || !selectedLoanId || !activeLoan) throw new Error("Invalid request");
       const today = new Date().toISOString().split("T")[0];
 
-      // 1. Masukkan ke Payment Records untuk diverifikasi Admin (Status PENDING)
       await addDoc(collection(db, "paymentRecords"), {
         userId: auth.currentUser.uid,
-        customer: auth.currentUser.email, // Idealnya pakai nama
+        customer: auth.currentUser.email,
         loanId: selectedLoanId,
         amount: activeLoan.monthlyPayment,
         date: today,
@@ -88,7 +86,6 @@ function PaymentsPage() {
         proofUploaded: true
       });
 
-      // 2. Masukkan ke riwayat transaksi Customer
       await addDoc(collection(db, "recentTransactions"), {
         userId: auth.currentUser.uid,
         date: today,
@@ -100,9 +97,8 @@ function PaymentsPage() {
     onSuccess: () => {
       toast.success("Pembayaran berhasil dikirim! Menunggu verifikasi admin.");
       setShowPay(false);
-      // Refresh tabel paymentRecords
+      setPaymentProofName(""); // Reset nama file setelah sukses
       queryClient.invalidateQueries({ queryKey: ["userPaymentRecords"] });
-      // Refresh dashboard (optional)
       queryClient.invalidateQueries({ queryKey: ["recentTransactions"] });
     },
     onError: () => {
@@ -162,14 +158,39 @@ function PaymentsPage() {
               <input className="fintech-input" value={selectedLoanId ? formatCurrency(activeLoan?.monthlyPayment || 0) : "Rp 0"} readOnly />
             </div>
           </div>
+
+          {/* UPLOAD BUKTI TRANSFER GIMMICK */}
           <div className="mt-4">
             <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Upload Payment Proof</label>
-            <div className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-emerald transition-colors" style={{ borderColor: "var(--border)" }}>
-              <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: "var(--muted-foreground)" }} />
-              <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Click to upload receipt or proof of transfer</p>
-            </div>
+            <label
+              className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-emerald transition-colors block"
+              style={{ borderColor: paymentProofName ? "var(--emerald)" : "var(--border)" }}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    setPaymentProofName(e.target.files[0].name);
+                  }
+                }}
+              />
+              <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: paymentProofName ? "var(--emerald)" : "var(--muted-foreground)" }} />
+              {paymentProofName ? (
+                <p className="text-sm font-medium" style={{ color: "var(--emerald)" }}>{paymentProofName}</p>
+              ) : (
+                <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Click to upload receipt or proof of transfer</p>
+              )}
+            </label>
           </div>
-          <button onClick={() => submitPayment()} disabled={isSubmitting || !selectedLoanId} className="btn-emerald mt-4">
+
+          {/* Tombol akan ter-disable jika belum pura-pura upload */}
+          <button
+            onClick={() => submitPayment()}
+            disabled={isSubmitting || !selectedLoanId || !paymentProofName}
+            className="btn-emerald mt-4"
+          >
             {isSubmitting ? "Memproses..." : <><CheckCircle className="w-4 h-4" /> Submit Payment</>}
           </button>
         </div>

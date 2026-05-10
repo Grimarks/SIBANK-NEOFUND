@@ -260,19 +260,26 @@ function ProfilePage() {
         </div>
       )}
 
+      {/* PERBAIKAN: Checkbox fungsional alih-alih toggle palsu */}
       {tab === "notifications" && (
         <div className="stat-card animate-fade-in space-y-4">
-          <h3 className="font-semibold">Notification Preferences</h3>
-          {[["Payment Reminders", true], ["Loan Updates", true], ["Promotional Offers", false], ["Security Alerts", true]].map(([label, checked]) => (
-            <div key={String(label)} className="flex items-center justify-between py-2">
-              <span className="text-sm">{String(label)}</span>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" defaultChecked={checked as boolean} className="sr-only peer" />
-                <div className="w-9 h-5 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:rounded-full after:h-4 after:w-4 after:transition-all"
-                     style={{ background: "var(--secondary)" }} />
+          <h3 className="font-semibold mb-4">Notification Preferences</h3>
+
+          <div className="space-y-3">
+            {[["Payment Reminders", true], ["Loan Updates", true], ["Promotional Offers", false], ["Security Alerts", true]].map(([label, checked]) => (
+              <label key={String(label)} className="flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors hover:bg-secondary/50" style={{ borderColor: "var(--border)" }}>
+                <span className="text-sm font-medium">{String(label)}</span>
+                <input
+                  type="checkbox"
+                  defaultChecked={checked as boolean}
+                  className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                  style={{ accentColor: "var(--emerald)" }}
+                />
               </label>
-            </div>
-          ))}
+            ))}
+          </div>
+
+          <button className="btn-emerald mt-4">Save Preferences</button>
         </div>
       )}
     </DashboardLayout>
