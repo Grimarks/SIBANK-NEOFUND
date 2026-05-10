@@ -1,10 +1,15 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import React, { useState, useEffect } from "react";
+import { Link, useRouterState, useRouter } from "@tanstack/react-router";
 import {
   LayoutDashboard, FileText, CreditCard, Wallet, User, Settings,
   Users, CheckCircle, BarChart3, Activity, LogOut, ChevronLeft,
   ChevronRight, Shield, X
 } from "lucide-react";
-import { useState, useEffect } from "react";
+
+// --- Import Firebase Auth ---
+import { auth } from "@/lib/firebase";
+import { signOut } from "firebase/auth";
+import { toast } from "sonner";
 
 const customerNav = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
@@ -26,21 +31,33 @@ const adminNav = [
 export function AppSidebar({ role, mobileOpen, onMobileClose }: { role: "customer" | "admin"; mobileOpen?: boolean; onMobileClose?: () => void }) {
   const [collapsed, setCollapsed] = useState(false);
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
+  const router = useRouter();
   const nav = role === "admin" ? adminNav : customerNav;
+
   const isActive = (path: string) => {
     if (role === "admin" && path === "/admin") return currentPath === "/admin";
     if (role === "customer" && path === "/dashboard") return currentPath === "/dashboard";
     return currentPath.startsWith(path) && path !== "/dashboard" && path !== "/admin";
   };
 
-  // Close mobile sidebar on route change
   useEffect(() => {
     if (onMobileClose) onMobileClose();
   }, [currentPath]);
 
+  // Fungsi Logout
+  const handleLogout = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    try {
+      await signOut(auth);
+      toast.success("Berhasil keluar dari akun.");
+      router.navigate({ to: "/login" });
+    } catch (error) {
+      toast.error("Gagal logout, silakan coba lagi.");
+    }
+  };
+
   return (
     <>
-      {/* Mobile overlay */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 md:hidden"
@@ -48,7 +65,6 @@ export function AppSidebar({ role, mobileOpen, onMobileClose }: { role: "custome
         />
       )}
 
-      {/* Sidebar — hidden on mobile by default, shown when mobileOpen */}
       <aside
         className={`fixed left-0 top-0 h-screen z-50 flex flex-col transition-all duration-300
           md:translate-x-0 ${collapsed ? "md:w-[72px]" : "md:w-[260px]"}
@@ -69,7 +85,6 @@ export function AppSidebar({ role, mobileOpen, onMobileClose }: { role: "custome
               </div>
             )}
           </div>
-          {/* Close button — mobile only */}
           <button onClick={onMobileClose} className="p-1.5 rounded-md md:hidden" style={{ color: "var(--sidebar-foreground)", opacity: 0.5 }}>
             <X className="w-5 h-5" />
           </button>
@@ -85,11 +100,12 @@ export function AppSidebar({ role, mobileOpen, onMobileClose }: { role: "custome
         </nav>
 
         <div className="px-3 pb-4 space-y-2">
-          <Link to="/login" className={`sidebar-nav-item ${collapsed ? "md:justify-center md:px-0" : ""}`}>
+          {/* Tombol Logout */}
+          <a href="#" onClick={handleLogout} className={`sidebar-nav-item ${collapsed ? "md:justify-center md:px-0" : ""}`}>
             <LogOut className="w-[18px] h-[18px] flex-shrink-0" />
             {(!collapsed || mobileOpen) && <span>Logout</span>}
-          </Link>
-          {/* Collapse toggle — desktop only */}
+          </a>
+
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="w-full hidden md:flex items-center justify-center p-2 rounded-md transition-colors"

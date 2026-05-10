@@ -1,21 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import {
-  TrendingUp,
-  TrendingDown,
-  CreditCard,
-  Calendar,
-  DollarSign,
-  Activity,
-  ArrowUpRight,
-  Clock,
-  AlertCircle,
-  Plus,
-} from "lucide-react";
+import { TrendingUp, TrendingDown, CreditCard, Calendar, DollarSign, Activity, ArrowUpRight, Clock, AlertCircle, Plus } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { formatCurrency, formatDate } from "@/lib/utils";
-
-// --- Import Firebase & React Query ---
 import { useQuery } from "@tanstack/react-query";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
@@ -24,7 +11,6 @@ export const Route = createFileRoute("/dashboard/")({
   component: CustomerDashboard,
 });
 
-// Data chart placeholder jika belum ada data asli
 const emptyChartData = [
   { month: "Jan", balance: 0 }, { month: "Feb", balance: 0 },
   { month: "Mar", balance: 0 }, { month: "Apr", balance: 0 },
@@ -54,19 +40,17 @@ interface Transaction {
 }
 
 function CustomerDashboard() {
-  // 1. Fetching Loans (Filtered by User ID)
   const { data: customerLoans = [], isLoading: isLoansLoading } = useQuery({
-    queryKey: ["customerLoans", auth.currentUser?.uid],
+    queryKey: ["loans", auth.currentUser?.uid], // Query key disamakan
     queryFn: async () => {
       if (!auth.currentUser) return [];
-      const q = query(collection(db, "customerLoans"), where("userId", "==", auth.currentUser.uid));
+      const q = query(collection(db, "loans"), where("userId", "==", auth.currentUser.uid)); // Mengambil dari koleksi 'loans'
       const snap = await getDocs(q);
       return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CustomerLoan));
     },
     enabled: !!auth.currentUser,
   });
 
-  // 2. Fetching Transactions (Filtered by User ID)
   const { data: recentTransactions = [], isLoading: isTxLoading, isError } = useQuery({
     queryKey: ["recentTransactions", auth.currentUser?.uid],
     queryFn: async () => {
@@ -108,8 +92,7 @@ function CustomerDashboard() {
   ];
 
   return (
-    <DashboardLayout role="customer" title="Dashboard" subtitle={`Welcome back, User`}>
-      {/* Stats Cards */}
+    <DashboardLayout role="customer" title="Dashboard" subtitle={`Welcome back`}>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         {stats.map((s) => (
           <div key={s.label} className="stat-card">
@@ -128,7 +111,6 @@ function CustomerDashboard() {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Chart Section */}
         <div className="lg:col-span-2 stat-card">
           <h3 className="font-semibold mb-4">Loan Balance Trend</h3>
           <ResponsiveContainer width="100%" height={240}>
@@ -142,28 +124,16 @@ function CustomerDashboard() {
               <XAxis dataKey="month" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`} />
               <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-              <Area
-                type="monotone"
-                dataKey="balance"
-                stroke="oklch(0.55 0.17 160)"
-                fill="url(#colorBal)"
-                strokeWidth={2}
-              />
+              <Area type="monotone" dataKey="balance" stroke="oklch(0.55 0.17 160)" fill="url(#colorBal)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
-        {/* --- LOGIKA EMPTY STATE UNTUK UPCOMING PAYMENT --- */}
         <div className="stat-card flex flex-col h-full">
           <h3 className="font-semibold mb-4">Upcoming Payment</h3>
-
           {activeLoan ? (
-            // Jika ada pinjaman aktif
             <>
-              <div
-                className="rounded-xl p-4 mb-4 gradient-primary"
-                style={{ color: "var(--primary-foreground)" }}
-              >
+              <div className="rounded-xl p-4 mb-4 gradient-primary" style={{ color: "var(--primary-foreground)" }}>
                 <p className="text-xs opacity-70 mb-1">Next installment</p>
                 <p className="text-2xl font-bold">{formatCurrency(activeLoan.monthlyPayment)}</p>
                 <div className="flex items-center gap-2 mt-3 text-xs opacity-80">
@@ -176,19 +146,15 @@ function CustomerDashboard() {
                   <span className="font-medium">{activeLoan.paid} of {activeLoan.total}</span>
                 </div>
                 <div className="w-full h-2 rounded-full" style={{ background: "var(--secondary)" }}>
-                  <div
-                    className="h-2 rounded-full gradient-emerald"
-                    style={{ width: `${(activeLoan.paid / activeLoan.total) * 100}%` }}
-                  />
+                  <div className="h-2 rounded-full gradient-emerald" style={{ width: `${(activeLoan.paid / activeLoan.total) * 100}%` }} />
                 </div>
                 <div className="flex justify-between text-sm">
                   <span style={{ color: "var(--muted-foreground)" }}>Loan ID</span>
-                  <span className="font-medium">{activeLoan.id}</span>
+                  <span className="font-medium truncate max-w-[120px]">{activeLoan.id}</span>
                 </div>
               </div>
             </>
           ) : (
-            // --- EMPTY STATE UI ---
             <div className="flex-1 flex flex-col items-center justify-center text-center p-4">
               <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center mb-4">
                 <CreditCard className="w-6 h-6 text-muted-foreground opacity-50" />
@@ -197,10 +163,7 @@ function CustomerDashboard() {
               <p className="text-xs text-muted-foreground mb-6">
                 Ajukan pinjaman pertama Anda dan kelola keuangan dengan lebih cerdas.
               </p>
-              <Link
-                to="/dashboard/apply"
-                className="btn-emerald w-full py-2.5 text-xs flex items-center justify-center gap-2"
-              >
+              <Link to="/dashboard/apply" className="btn-emerald w-full py-2.5 text-xs flex items-center justify-center gap-2">
                 <Plus className="w-4 h-4" /> Ajukan Pinjaman
               </Link>
             </div>
@@ -208,27 +171,17 @@ function CustomerDashboard() {
         </div>
       </div>
 
-      {/* Recent Transactions */}
       <div className="stat-card mt-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold">Recent Transactions</h3>
-          <Link
-            to="/dashboard/payments"
-            className="text-xs font-medium flex items-center gap-1"
-            style={{ color: "var(--emerald)" }}
-          >
+          <Link to="/dashboard/payments" className="text-xs font-medium flex items-center gap-1" style={{ color: "var(--emerald)" }}>
             View all <ArrowUpRight className="w-3 h-3" />
           </Link>
         </div>
         <div className="overflow-x-auto">
           <table className="data-table">
             <thead>
-              <tr>
-                <th>Date</th>
-                <th>Description</th>
-                <th>Amount</th>
-                <th>Type</th>
-              </tr>
+            <tr><th>Date</th><th>Description</th><th>Amount</th><th>Type</th></tr>
             </thead>
             <tbody>
             {recentTransactions.slice(0, 5).map((t) => (
@@ -242,11 +195,7 @@ function CustomerDashboard() {
               </tr>
             ))}
             {recentTransactions.length === 0 && (
-              <tr>
-                <td colSpan={4} className="text-center py-8 text-sm text-muted-foreground">
-                  Belum ada riwayat transaksi.
-                </td>
-              </tr>
+              <tr><td colSpan={4} className="text-center py-8 text-sm text-muted-foreground">Belum ada riwayat transaksi.</td></tr>
             )}
             </tbody>
           </table>

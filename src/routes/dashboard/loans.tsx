@@ -4,27 +4,26 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { Eye, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 
 export const Route = createFileRoute("/dashboard/loans")({
   component: MyLoansPage,
 });
 
-const statusConfig = {
+const statusConfig: Record<string, any> = {
   approved: { icon: CheckCircle, badge: "badge-approved", label: "Approved" },
   pending: { icon: Clock, badge: "badge-pending", label: "Pending" },
   rejected: { icon: XCircle, badge: "badge-rejected", label: "Rejected" },
   completed: { icon: CheckCircle, badge: "badge-completed", label: "Completed" },
 };
 
-// Interface untuk TypeScript
 interface CustomerLoan {
   id: string;
   amount: number;
   duration: number;
   rate: number;
-  status: "approved" | "completed" | "pending" | "rejected";
+  status: string;
   remainingBalance: number;
   paid: number;
   total: number;
@@ -37,29 +36,17 @@ function MyLoansPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
 
-  // Fetching data dari Firestore
-  const { data: customerLoans = [], isLoading } = useQuery({
-    queryKey: ["customerLoans", auth.currentUser?.uid], // Key unik per user
+  const { data: customerLoans = [], isLoading, isError } = useQuery({
+    queryKey: ["loans", auth.currentUser?.uid],
     queryFn: async () => {
       if (!auth.currentUser) return [];
-
-      // 2. Gunakan query dan where untuk memfilter data milik user ini saja
-      const q = query(
-        collection(db, "customerLoans"),
-        where("userId", "==", auth.currentUser.uid)
-      );
-
+      const q = query(collection(db, "loans"), where("userId", "==", auth.currentUser.uid));
       const snap = await getDocs(q);
       return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CustomerLoan));
     },
-    enabled: !!auth.currentUser, // Jalankan hanya jika user sudah terdeteksi login
+    enabled: !!auth.currentUser,
   });
 
-      return loansData;
-    },
-  });
-
-  // Tampilan saat data sedang diambil (Loading)
   if (isLoading) {
     return (
       <DashboardLayout role="customer" title="My Loans" subtitle="Track all your loan applications">
@@ -70,7 +57,6 @@ function MyLoansPage() {
     );
   }
 
-  // Tampilan saat terjadi error / gagal fetch
   if (isError) {
     return (
       <DashboardLayout role="customer" title="My Loans" subtitle="Track all your loan applications">
@@ -82,8 +68,7 @@ function MyLoansPage() {
     );
   }
 
-  // Filter berjalan menggunakan data yang sudah diambil dari Firestore
-  const filtered = filter === "all" ? customerLoans : customerLoans.filter((l) => l.status === filter);
+  const filtered = filter === "all" ? customerLoans : customerLoans.filter((l) => l.status?.toLowerCase() === filter);
 
   return (
     <DashboardLayout role="customer" title="My Loans" subtitle="Track all your loan applications">
@@ -99,7 +84,9 @@ function MyLoansPage() {
 
       <div className="space-y-4">
         {filtered.map((loan) => {
-          const cfg = statusConfig[loan.status];
+          const safeStatus = loan.status ? loan.status.toLowerCase() : "pending";
+          const cfg = statusConfig[safeStatus] || { icon: AlertCircle, badge: "badge-pending", label: loan.status || "Unknown" };
+
           return (
             <div key={loan.id} className="stat-card">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -108,7 +95,7 @@ function MyLoansPage() {
                     <cfg.icon className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="font-semibold">{loan.id}</p>
+                    <p className="font-semibold truncate max-w-[150px]">{loan.id}</p>
                     <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Applied {formatDate(loan.startDate)}</p>
                   </div>
                 </div>
@@ -128,43 +115,27 @@ function MyLoansPage() {
                 <div className="mt-4 pt-4 border-t grid md:grid-cols-3 gap-4 animate-fade-in" style={{ borderColor: "var(--border)" }}>
                   <div>
                     <p className="text-xs mb-1" style={{ color: "var(--muted-foreground)" }}>Remaining Balance</p>
-                    <p className="font-semibold">{formatCurrency(loan.remainingBalance)}</p>
+                    <p className="font-semibold">{formatCurrency(loan.remainingBalance || 0)}</p>
                   </div>
                   <div>
                     <p className="text-xs mb-1" style={{ color: "var(--muted-foreground)" }}>Monthly Payment</p>
-                    <p className="font-semibold">{formatCurrency(loan.monthlyPayment)}</p>
+                    <p className="font-semibold">{formatCurrency(loan.monthlyPayment || 0)}</p>
                   </div>
                   <div>
                     <p className="text-xs mb-1" style={{ color: "var(--muted-foreground)" }}>Progress</p>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-2 rounded-full" style={{ background: "var(--secondary)" }}>
-                        <div className="h-2 rounded-full gradient-emerald" style={{ width: `${(loan.paid / loan.total) * 100}%` }} />
+                        <div className="h-2 rounded-full gradient-emerald" style={{ width: `${((loan.paid || 0) / (loan.total || 1)) * 100}%` }} />
                       </div>
-                      <span className="text-xs font-medium">{loan.paid}/{loan.total}</span>
+                      <span className="text-xs font-medium">{loan.paid || 0}/{loan.total || 0}</span>
                     </div>
                   </div>
-                  {loan.status === "approved" && (
-                    <div className="md:col-span-3 overflow-hidden">
-                      <p className="text-xs mb-2 font-medium">Installment Timeline</p>
-                      <div className="flex items-center gap-1 flex-wrap pb-2">
-                        {Array.from({ length: loan.total }, (_, i) => (
-                          <div key={i} className="flex flex-col items-center w-8">
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${i < loan.paid ? "gradient-emerald" : ""}`}
-                                 style={i < loan.paid ? { color: "var(--emerald-foreground)" } : { border: "2px solid var(--border)", color: "var(--muted-foreground)" }}>
-                              {i + 1}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           );
         })}
 
-        {/* Tambahan UX kecil: Menampilkan pesan jika tidak ada data dari filter tersebut */}
         {filtered.length === 0 && (
           <div className="text-center py-8 text-sm" style={{ color: "var(--muted-foreground)" }}>
             Belum ada pinjaman dengan status ini.

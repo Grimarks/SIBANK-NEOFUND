@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Calculator, Info, ArrowRight } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
-// --- Import Firebase & UI utilities ---
+// --- Import Firebase ---
 import { collection, addDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -18,11 +18,8 @@ function ApplyLoanPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  // State yang sudah ada
   const [amount, setAmount] = useState(10000000);
   const [duration, setDuration] = useState(12);
-
-  // State baru untuk menampung input pengguna
   const [purpose, setPurpose] = useState("Personal");
   const [notes, setNotes] = useState("");
 
@@ -32,28 +29,39 @@ function ApplyLoanPage() {
   const totalPayment = monthly * duration;
   const totalInterest = totalPayment - amount;
 
-  // Mutasi React Query untuk menyimpan ke Firestore
   const { mutate: submitApplication, isPending } = useMutation({
     mutationFn: async () => {
       if (!auth.currentUser) throw new Error("User tidak login");
 
-      await addDoc(collection(db, "adminLoans"), {
-        userId: auth.currentUser.uid, // WAJIB: Simpan ID User
-        customer: name, // Gunakan state nama dari user yang login
+      const today = new Date();
+      const nextMonth = new Date();
+      nextMonth.setMonth(today.getMonth() + 1);
+
+      // Simpan ke koleksi 'loans' yang seragam dengan Admin
+      await addDoc(collection(db, "loans"), {
+        userId: auth.currentUser.uid,
+        customer: auth.currentUser.email, // Sebagai identifier sementara
         amount,
         duration,
         rate,
         status: "pending",
         riskLevel: "medium",
-        appliedDate: new Date().toISOString().split("T")[0],
+        appliedDate: today.toISOString().split("T")[0],
         purpose,
         notes,
+        // Properti tambahan agar UI tabel tidak crash
+        remainingBalance: Math.round(totalPayment),
+        paid: 0,
+        total: duration,
+        monthlyPayment: Math.round(monthly),
+        startDate: today.toISOString().split("T")[0],
+        nextDue: nextMonth.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
       });
     },
     onSuccess: () => {
-      // Notifikasi sukses dan arahkan user ke halaman My Loans
       toast.success("Pengajuan berhasil dikirim!");
-      queryClient.invalidateQueries({ queryKey: ["adminLoans"] });
+      // Segarkan data loans agar muncul di tabel
+      queryClient.invalidateQueries({ queryKey: ["loans"] });
       router.navigate({ to: "/dashboard/loans" });
     },
     onError: (error) => {
@@ -147,7 +155,6 @@ function ApplyLoanPage() {
             </p>
           </div>
 
-          {/* Tombol dimatikan (disabled) jika sedang mengirim data */}
           <button
             className="btn-emerald w-full py-3"
             onClick={() => submitApplication()}
