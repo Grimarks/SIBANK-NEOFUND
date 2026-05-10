@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as PendingVerificationRouteImport } from './routes/pending-verification'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
@@ -27,6 +28,11 @@ import { Route as AdminCustomersRouteImport } from './routes/admin/customers'
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PendingVerificationRoute = PendingVerificationRouteImport.update({
+  id: '/pending-verification',
+  path: '/pending-verification',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -98,6 +104,7 @@ const AdminCustomersRoute = AdminCustomersRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/pending-verification': typeof PendingVerificationRoute
   '/register': typeof RegisterRoute
   '/admin/customers': typeof AdminCustomersRoute
   '/admin/loans': typeof AdminLoansRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/pending-verification': typeof PendingVerificationRoute
   '/register': typeof RegisterRoute
   '/admin/customers': typeof AdminCustomersRoute
   '/admin/loans': typeof AdminLoansRoute
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/pending-verification': typeof PendingVerificationRoute
   '/register': typeof RegisterRoute
   '/admin/customers': typeof AdminCustomersRoute
   '/admin/loans': typeof AdminLoansRoute
@@ -149,6 +158,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/pending-verification'
     | '/register'
     | '/admin/customers'
     | '/admin/loans'
@@ -165,6 +175,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/pending-verification'
     | '/register'
     | '/admin/customers'
     | '/admin/loans'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/login'
+    | '/pending-verification'
     | '/register'
     | '/admin/customers'
     | '/admin/loans'
@@ -198,6 +210,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
+  PendingVerificationRoute: typeof PendingVerificationRoute
   RegisterRoute: typeof RegisterRoute
   AdminCustomersRoute: typeof AdminCustomersRoute
   AdminLoansRoute: typeof AdminLoansRoute
@@ -219,6 +232,13 @@ declare module '@tanstack/react-router' {
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pending-verification': {
+      id: '/pending-verification'
+      path: '/pending-verification'
+      fullPath: '/pending-verification'
+      preLoaderRoute: typeof PendingVerificationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -318,6 +338,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
+  PendingVerificationRoute: PendingVerificationRoute,
   RegisterRoute: RegisterRoute,
   AdminCustomersRoute: AdminCustomersRoute,
   AdminLoansRoute: AdminLoansRoute,

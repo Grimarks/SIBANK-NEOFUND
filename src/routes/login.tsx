@@ -2,9 +2,10 @@ import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { Shield, Eye, EyeOff, ArrowRight } from "lucide-react";
 
-// --- Import Firebase Auth & Utilities ---
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+// --- Import Firebase Auth & Firestore ---
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/login")({
@@ -24,7 +25,6 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // Fungsi Login Firebase
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -34,19 +34,60 @@ function LoginPage() {
 
     setIsLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      toast.success("Login berhasil!");
+      // 1. Coba login
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
 
-      // Jika berhasil, arahkan ke Dashboard
-      // (Bisa ditambahkan logika: jika email admin, arahkan ke /admin)
-      if (email.includes("admin")) {
+      // 2. Jika dia Admin, langsung loloskan
+      if (email.toLowerCase().includes("admin")) {
+        toast.success("Login Admin berhasil!");
         router.navigate({ to: "/admin" });
+        return;
+      }
+
+      // 3. Jika dia Customer, cek status verifikasinya di Firestore
+      const userDoc = await getDoc(doc(db, "adminCustomers", userCredential.user.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+
+        if (userData.status === "suspended") {
+          await signOut(auth); // Keluarkan paksa
+          toast.error("Akun Anda telah ditangguhkan. Hubungi Admin.");
+          return;
+        }
+
+        // INFO VERIFIKASI 1x24 JAM
+        if (userData.verified === false) {
+          await signOut(auth);
+          router.navigate({ to: "/pending-verification" });
+          return;
+        }
+
+        // Lolos verifikasi
+        toast.success("Login berhasil!");
+        router.navigate({ to: "/dashboard" });
       } else {
+        // Jika data profil belum ada (kasus edge case)
+        toast.success("Login berhasil!");
         router.navigate({ to: "/dashboard" });
       }
+
     } catch (error: any) {
       console.error(error);
-      toast.error("Login gagal. Periksa kembali email dan password Anda.");
+
+      // ERROR HANDLING SPESIFIK FIREBASE
+      if (error.code === 'auth/user-not-found') {
+        toast.error("Email belum terdaftar. Silakan buat akun terlebih dahulu.");
+      } else if (error.code === 'auth/wrong-password') {
+        toast.error("Password yang Anda masukkan salah.");
+      } else if (error.code === 'auth/invalid-credential') {
+        toast.error("Kredensial tidak valid. Email atau password salah.");
+      } else if (error.code === 'auth/too-many-requests') {
+        toast.error("Terlalu banyak percobaan gagal. Silakan coba lagi nanti.");
+      } else if (error.code === 'auth/invalid-email') {
+        toast.error("Format email tidak valid.");
+      } else {
+        toast.error("Login gagal. Periksa kembali koneksi atau kredensial Anda.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -106,7 +147,7 @@ function LoginPage() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Email or Username</label>
+              <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Email</label>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="fintech-input" placeholder="you@example.com" required />
             </div>
             <div>
@@ -125,19 +166,9 @@ function LoginPage() {
               <button type="button" className="text-xs font-medium" style={{ color: "var(--emerald)" }}>Forgot password?</button>
             </div>
 
-            <button type="submit" disabled={isLoading} className="btn-primary mt-2 w-full">
+            <button type="submit" disabled={isLoading} className="btn-primary mt-6 w-full">
               {isLoading ? "Signing in..." : <>Sign In <ArrowRight className="w-4 h-4" /></>}
             </button>
-
-            <div className="flex items-center gap-3 my-4">
-              <div className="flex-1 h-px" style={{ background: "var(--border)" }} />
-              <span className="text-xs" style={{ color: "var(--muted-foreground)" }}>or continue as</span>
-              <div className="flex-1 h-px" style={{ background: "var(--border)" }} />
-            </div>
-
-            <Link to="/admin" className="btn-outline w-full justify-center">
-              <Shield className="w-4 h-4" /> Admin Dashboard
-            </Link>
           </form>
 
           <p className="text-center text-xs mt-8" style={{ color: "var(--muted-foreground)" }}>

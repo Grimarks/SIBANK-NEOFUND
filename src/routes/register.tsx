@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Shield, Eye, EyeOff, ArrowRight, Upload } from "lucide-react";
 
 // --- Import Firebase Auth & Firestore ---
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, signOut } from "firebase/auth"; // Tambahkan signOut
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { toast } from "sonner";
@@ -52,7 +52,7 @@ function RegisterPage() {
 
     setIsLoading(true);
     try {
-      // 1. Buat user di Firebase Authentication
+      // 1. Buat user di Firebase Authentication (Firebase otomatis melakukan login setelah ini)
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
@@ -62,16 +62,19 @@ function RegisterPage() {
         name: name,
         email: email,
         phone: phone,
-        address: address, // Kolom tambahan sesuai form
+        address: address,
         status: "active",
         totalLoans: 0,
-        creditScore: 650, // Nilai default untuk pendaftar baru
+        creditScore: 650,
         joinDate: new Date().toISOString().split("T")[0],
-        verified: false, // Menunggu verifikasi KTP admin
+        verified: false, // Default false
       });
 
+      // 3. Paksa keluar (Sign Out) agar tidak otomatis masuk ke Dashboard
+      await signOut(auth);
       toast.success("Akun berhasil dibuat!");
-      router.navigate({ to: "/dashboard" });
+      router.navigate({ to: "/pending-verification" });
+
     } catch (error: any) {
       console.error(error);
       if (error.code === 'auth/email-already-in-use') {
