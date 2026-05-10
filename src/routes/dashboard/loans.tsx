@@ -5,7 +5,7 @@ import { Eye, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { collection, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, auth } from "@/lib/firebase";
 
 export const Route = createFileRoute("/dashboard/loans")({
   component: MyLoansPage,
@@ -38,15 +38,22 @@ function MyLoansPage() {
   const [filter, setFilter] = useState("all");
 
   // Fetching data dari Firestore
-  const { data: customerLoans = [], isLoading, isError } = useQuery({
-    queryKey: ["customerLoans"],
+  const { data: customerLoans = [], isLoading } = useQuery({
+    queryKey: ["customerLoans", auth.currentUser?.uid], // Key unik per user
     queryFn: async () => {
-      const querySnapshot = await getDocs(collection(db, "customerLoans"));
-      const loansData: CustomerLoan[] = [];
+      if (!auth.currentUser) return [];
 
-      querySnapshot.forEach((doc) => {
-        loansData.push({ id: doc.id, ...doc.data() } as CustomerLoan);
-      });
+      // 2. Gunakan query dan where untuk memfilter data milik user ini saja
+      const q = query(
+        collection(db, "customerLoans"),
+        where("userId", "==", auth.currentUser.uid)
+      );
+
+      const snap = await getDocs(q);
+      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CustomerLoan));
+    },
+    enabled: !!auth.currentUser, // Jalankan hanya jika user sudah terdeteksi login
+  });
 
       return loansData;
     },

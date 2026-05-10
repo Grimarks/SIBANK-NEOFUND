@@ -6,7 +6,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 
 // --- Import Firebase & UI utilities ---
 import { collection, addDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, auth } from "@/lib/firebase";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -35,13 +35,16 @@ function ApplyLoanPage() {
   // Mutasi React Query untuk menyimpan ke Firestore
   const { mutate: submitApplication, isPending } = useMutation({
     mutationFn: async () => {
+      if (!auth.currentUser) throw new Error("User tidak login");
+
       await addDoc(collection(db, "adminLoans"), {
-        customer: "Nama Nasabah", // Nanti bisa diganti dengan nama user yang sedang Login
+        userId: auth.currentUser.uid, // WAJIB: Simpan ID User
+        customer: name, // Gunakan state nama dari user yang login
         amount,
         duration,
         rate,
         status: "pending",
-        riskLevel: "medium", // Default risk level
+        riskLevel: "medium",
         appliedDate: new Date().toISOString().split("T")[0],
         purpose,
         notes,
