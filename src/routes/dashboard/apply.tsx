@@ -1,11 +1,11 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Calculator, Info, ArrowRight } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 // --- Import Firebase ---
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, doc, getDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -18,10 +18,44 @@ function ApplyLoanPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  // State untuk menyimpan range dari Admin (Default jika gagal memuat)
+  const [limits, setLimits] = useState({ min: 1000000, max: 100000000, maxDuration: 36 });
+
   const [amount, setAmount] = useState(10000000);
   const [duration, setDuration] = useState(12);
   const [purpose, setPurpose] = useState("Personal");
   const [notes, setNotes] = useState("");
+
+  // 1. Ambil batas pinjaman dari pengaturan Admin
+  useEffect(() => {
+    const fetchLimits = async () => {
+      try {
+        const docRef = doc(db, "systemSettings", "loanConfig");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const newMin = data.minLoan || 1000000;
+          const newMax = data.maxLoan || 100000000;
+          const newMaxDuration = data.maxDuration || 36;
+
+          setLimits({ min: newMin, max: newMax, maxDuration: newMaxDuration });
+
+          // Sesuaikan amount jika nilai awal di luar batas baru
+          setAmount((prev) => {
+            if (prev < newMin) return newMin;
+            if (prev > newMax) return newMax;
+            return prev;
+          });
+
+          // Sesuaikan duration jika melebihi batas baru admin
+          setDuration((prev) => (prev > newMaxDuration ? newMaxDuration : prev));
+        }
+      } catch (error) {
+        console.error("Gagal memuat pengaturan limit pinjaman:", error);
+      }
+    };
+    fetchLimits();
+  }, []);
 
   const rate = duration <= 6 ? 7.0 : duration <= 12 ? 8.5 : duration <= 24 ? 9.0 : 10.5;
   const monthlyInterest = rate / 100 / 12;
@@ -83,16 +117,26 @@ function ApplyLoanPage() {
                 <label className="text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>Loan Amount</label>
                 <span className="text-sm font-bold" style={{ color: "var(--emerald)" }}>{formatCurrency(amount)}</span>
               </div>
-              <input type="range" min={1000000} max={100000000} step={1000000} value={amount} onChange={(e) => setAmount(Number(e.target.value))}
-                     className="w-full h-2 rounded-full appearance-none cursor-pointer" style={{ background: "var(--secondary)", accentColor: "var(--emerald)" }} />
+              <input
+                type="range"
+                min={limits.min}
+                max={limits.max}
+                step={limits.min >= 1000000 ? 1000000 : 100000}
+                value={amount}
+                onChange={(e) => setAmount(Number(e.target.value))}
+                className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                style={{ background: "var(--secondary)", accentColor: "var(--emerald)" }}
+              />
               <div className="flex justify-between text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>
-                <span>Rp 1M</span><span>Rp 100M</span>
+                <span>{formatCurrency(limits.min)}</span>
+                <span>{formatCurrency(limits.max)}</span>
               </div>
             </div>
             <div>
               <label className="text-xs font-medium mb-2 block" style={{ color: "var(--muted-foreground)" }}>Loan Duration</label>
               <div className="grid grid-cols-4 gap-2">
-                {[6, 12, 24, 36].map((d) => (
+                {/* Durasi difilter otomatis berdasarkan batas maksimal dari Admin */}
+                {[6, 12, 24, 36].filter(d => d <= limits.maxDuration).map((d) => (
                   <button key={d} onClick={() => setDuration(d)}
                           className={`py-2.5 rounded-lg text-sm font-medium transition-all ${duration === d ? "gradient-emerald" : ""}`}
                           style={duration === d ? { color: "var(--emerald-foreground)" } : { background: "var(--secondary)", color: "var(--foreground)" }}>
