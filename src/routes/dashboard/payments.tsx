@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Upload, Download, CreditCard, Calendar, CheckCircle, AlertCircle, Clock, XCircle } from "lucide-react";
+import { Upload, Download, CreditCard, Calendar, CheckCircle, AlertCircle, Clock, XCircle, BadgeCheck, Trophy } from "lucide-react";
 import { useState } from "react";
 
 // --- Import Firebase & React Query ---
@@ -39,7 +39,6 @@ interface CustomerLoan {
 function PaymentsPage() {
   const [showPay, setShowPay] = useState(false);
   const [selectedLoanId, setSelectedLoanId] = useState("");
-  // STATE UNTUK GIMMICK BUKTI TRANSFER
   const [paymentProofName, setPaymentProofName] = useState("");
   const queryClient = useQueryClient();
 
@@ -48,11 +47,9 @@ function PaymentsPage() {
     queryFn: async () => {
       if (!auth.currentUser) return [];
       const q = query(collection(db, "paymentRecords"), where("userId", "==", auth.currentUser.uid));
-      const querySnapshot = await getDocs(q);
-      const payData: PaymentRecord[] = [];
-      querySnapshot.forEach((doc) => payData.push({ id: doc.id, ...doc.data() } as PaymentRecord));
-
-      return payData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const snap = await getDocs(q);
+      const data: PaymentRecord[] = snap.docs.map((d) => ({ id: d.id, ...d.data() } as PaymentRecord));
+      return data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     },
     enabled: !!auth.currentUser,
   });
@@ -63,13 +60,20 @@ function PaymentsPage() {
       if (!auth.currentUser) return [];
       const q = query(collection(db, "loans"), where("userId", "==", auth.currentUser.uid));
       const snap = await getDocs(q);
-      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CustomerLoan));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as CustomerLoan));
     },
     enabled: !!auth.currentUser,
   });
 
+  // Hanya "approved" yang bisa dibayar — completed tidak masuk
   const activeLoans = customerLoans.filter((l) => l.status === "approved");
-  const activeLoan = activeLoans.find(l => l.id === selectedLoanId) || (activeLoans.length > 0 ? activeLoans[0] : null);
+  const completedLoans = customerLoans.filter((l) => l.status === "completed");
+  const hasAnyLoan = customerLoans.length > 0;
+  const allCompleted = hasAnyLoan && activeLoans.length === 0 && completedLoans.length > 0;
+
+  const activeLoan =
+    activeLoans.find((l) => l.id === selectedLoanId) ||
+    (activeLoans.length > 0 ? activeLoans[0] : null);
 
   const { mutate: submitPayment, isPending: isSubmitting } = useMutation({
     mutationFn: async () => {
@@ -83,7 +87,7 @@ function PaymentsPage() {
         amount: activeLoan.monthlyPayment,
         date: today,
         status: "pending",
-        proofUploaded: true
+        proofUploaded: true,
       });
 
       await addDoc(collection(db, "recentTransactions"), {
@@ -91,57 +95,134 @@ function PaymentsPage() {
         date: today,
         description: `Installment Payment - ${selectedLoanId.substring(0, 6)}...`,
         amount: -(activeLoan.monthlyPayment),
-        type: "payment"
+        type: "payment",
       });
     },
     onSuccess: () => {
       toast.success("Pembayaran berhasil dikirim! Menunggu verifikasi admin.");
       setShowPay(false);
-      setPaymentProofName(""); // Reset nama file setelah sukses
+      setPaymentProofName("");
       queryClient.invalidateQueries({ queryKey: ["userPaymentRecords"] });
       queryClient.invalidateQueries({ queryKey: ["recentTransactions"] });
     },
     onError: () => {
       toast.error("Gagal mengirim pembayaran.");
-    }
+    },
   });
 
-  if (isPayLoading || isLoansLoading) return <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments"><div className="flex justify-center items-center h-40 animate-pulse text-muted-foreground">Memuat data pembayaran...</div></DashboardLayout>;
-  if (isPayError) return <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments"><div className="flex justify-center items-center h-40 text-red-500 gap-2"><AlertCircle className="w-5 h-5" /> Gagal memuat data.</div></DashboardLayout>;
+  if (isPayLoading || isLoansLoading)
+    return (
+      <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments">
+        <div className="flex justify-center items-center h-40 animate-pulse text-muted-foreground">
+          Memuat data pembayaran...
+        </div>
+      </DashboardLayout>
+    );
+
+  if (isPayError)
+    return (
+      <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments">
+        <div className="flex justify-center items-center h-40 text-red-500 gap-2">
+          <AlertCircle className="w-5 h-5" /> Gagal memuat data.
+        </div>
+      </DashboardLayout>
+    );
 
   const nextPaymentAmount = activeLoan?.monthlyPayment || 0;
   const remainingBalance = activeLoan?.remainingBalance || 0;
+  const totalPaid = activeLoan ? activeLoan.paid * activeLoan.monthlyPayment : 0;
 
   return (
     <DashboardLayout role="customer" title="Payments" subtitle="Manage installment payments">
-      <div className="grid lg:grid-cols-3 gap-6 mb-6">
-        <div className="stat-card gradient-emerald" style={{ color: "var(--emerald-foreground)" }}>
-          <CreditCard className="w-5 h-5 mb-3 opacity-80" />
-          <p className="text-xs opacity-70">Next Payment</p>
-          <p className="text-2xl font-bold">{formatCurrency(nextPaymentAmount)}</p>
-          <div className="flex items-center gap-2 mt-2 text-xs opacity-70">
-            <Calendar className="w-3 h-3" /> {activeLoan?.nextDue ? `Due ${activeLoan.nextDue}` : "No upcoming due"}
+
+      {/* Banner semua lunas */}
+      {allCompleted && (
+        <div
+          className="flex items-center gap-3 p-4 rounded-xl mb-6"
+          style={{
+            background: "color-mix(in oklch, oklch(0.55 0.17 160) 12%, transparent)",
+            border: "1px solid color-mix(in oklch, oklch(0.55 0.17 160) 30%, transparent)",
+          }}
+        >
+          <Trophy className="w-5 h-5 flex-shrink-0" style={{ color: "oklch(0.55 0.17 160)" }} />
+          <div>
+            <p className="text-sm font-semibold" style={{ color: "oklch(0.55 0.17 160)" }}>
+              Semua pinjaman telah dilunasi!
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: "oklch(0.55 0.17 160)", opacity: 0.8 }}>
+              Tidak ada cicilan yang perlu dibayar saat ini.
+            </p>
           </div>
         </div>
-        <div className="stat-card">
-          <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Total Paid</p>
-          <p className="text-2xl font-bold">{formatCurrency(activeLoan ? (activeLoan.paid * activeLoan.monthlyPayment) : 0)}</p>
-          <p className="text-xs mt-1" style={{ color: "var(--emerald)" }}>{activeLoan?.paid || 0} installments completed</p>
+      )}
+
+      {/* Summary cards */}
+      <div className="grid lg:grid-cols-3 gap-6 mb-6">
+        <div
+          className={`stat-card ${activeLoans.length > 0 ? "gradient-emerald" : ""}`}
+          style={activeLoans.length > 0 ? { color: "var(--emerald-foreground)" } : { background: "var(--secondary)" }}
+        >
+          <CreditCard className="w-5 h-5 mb-3 opacity-80" />
+          <p className="text-xs opacity-70">{allCompleted ? "Status Pembayaran" : "Next Payment"}</p>
+          {allCompleted ? (
+            <div className="flex items-center gap-2 mt-1">
+              <BadgeCheck className="w-5 h-5" style={{ color: "oklch(0.55 0.17 160)" }} />
+              <p className="text-lg font-bold" style={{ color: "oklch(0.55 0.17 160)" }}>Semua Lunas</p>
+            </div>
+          ) : (
+            <p className="text-2xl font-bold">{formatCurrency(nextPaymentAmount)}</p>
+          )}
+          <div className="flex items-center gap-2 mt-2 text-xs opacity-70">
+            <Calendar className="w-3 h-3" />
+            {activeLoan?.nextDue ? `Jatuh tempo ${activeLoan.nextDue}` : allCompleted ? "Tidak ada tagihan" : "Tidak ada pinjaman aktif"}
+          </div>
         </div>
+
         <div className="stat-card">
-          <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Remaining</p>
-          <p className="text-2xl font-bold">{formatCurrency(remainingBalance)}</p>
-          <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>{activeLoan ? activeLoan.total - activeLoan.paid : 0} installments left</p>
+          <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Total Dibayar</p>
+          <p className="text-2xl font-bold">{formatCurrency(totalPaid)}</p>
+          <p className="text-xs mt-1" style={{ color: "oklch(0.55 0.17 160)" }}>{activeLoan?.paid || 0} cicilan selesai</p>
+        </div>
+
+        <div className="stat-card">
+          <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Sisa Tagihan</p>
+          <p className="text-2xl font-bold">
+            {allCompleted
+              ? <span style={{ color: "oklch(0.55 0.17 160)" }}>Rp 0</span>
+              : formatCurrency(remainingBalance)}
+          </p>
+          <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>
+            {activeLoan ? `${activeLoan.total - activeLoan.paid} cicilan tersisa` : allCompleted ? "Semua cicilan lunas" : "Tidak ada pinjaman aktif"}
+          </p>
         </div>
       </div>
 
+      {/* Action buttons */}
       <div className="flex gap-3 mb-6">
-        <button onClick={() => setShowPay(!showPay)} className="btn-emerald" disabled={activeLoans.length === 0}>
-          <CreditCard className="w-4 h-4" /> Pay Installment
+        <div className="relative group">
+          <button
+            onClick={() => activeLoans.length > 0 && setShowPay(!showPay)}
+            disabled={activeLoans.length === 0}
+            className={`btn-emerald flex items-center gap-2 ${activeLoans.length === 0 ? "opacity-40 cursor-not-allowed" : ""}`}
+          >
+            <CreditCard className="w-4 h-4" />
+            {allCompleted ? "Tidak Ada Tagihan" : "Pay Installment"}
+          </button>
+          {activeLoans.length === 0 && (
+            <div
+              className="absolute bottom-full left-0 mb-2 px-3 py-2 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10"
+              style={{ background: "var(--card)", border: "1px solid var(--border)", color: "var(--foreground)", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}
+            >
+              {allCompleted ? "✓ Semua pinjaman sudah lunas" : "Tidak ada pinjaman aktif"}
+            </div>
+          )}
+        </div>
+        <button className="btn-outline flex items-center gap-2">
+          <Download className="w-4 h-4" /> Download Invoice
         </button>
-        <button className="btn-outline"><Download className="w-4 h-4" /> Download Invoice</button>
       </div>
 
+      {/* Form pembayaran */}
       {showPay && activeLoans.length > 0 && (
         <div className="stat-card mb-6 animate-scale-in">
           <h3 className="font-semibold mb-4">Pay Installment</h3>
@@ -149,72 +230,70 @@ function PaymentsPage() {
             <div>
               <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Loan ID</label>
               <select className="fintech-input" value={selectedLoanId} onChange={(e) => setSelectedLoanId(e.target.value)}>
-                <option value="">-- Select Loan --</option>
-                {activeLoans.map(loan => <option key={loan.id} value={loan.id}>{loan.id}</option>)}
+                <option value="">-- Pilih Pinjaman --</option>
+                {/* Hanya activeLoans (approved) yang muncul — completed tidak ada di sini */}
+                {activeLoans.map((loan) => (
+                  <option key={loan.id} value={loan.id}>{loan.id}</option>
+                ))}
               </select>
+              {/* Info kalau ada completed yang tidak ditampilkan */}
+              {completedLoans.length > 0 && (
+                <p className="text-[11px] mt-1.5 flex items-center gap-1" style={{ color: "var(--muted-foreground)" }}>
+                  <BadgeCheck className="w-3 h-3" />
+                  {completedLoans.length} pinjaman lunas tidak ditampilkan
+                </p>
+              )}
             </div>
             <div>
-              <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Amount</label>
-              <input className="fintech-input" value={selectedLoanId ? formatCurrency(activeLoan?.monthlyPayment || 0) : "Rp 0"} readOnly />
+              <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Jumlah Cicilan</label>
+              <input
+                className="fintech-input opacity-70 cursor-not-allowed"
+                value={selectedLoanId ? formatCurrency(activeLoan?.monthlyPayment || 0) : "Rp 0"}
+                readOnly
+              />
             </div>
           </div>
 
-          {/* UPLOAD BUKTI TRANSFER GIMMICK */}
           <div className="mt-4">
-            <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Upload Payment Proof</label>
+            <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--muted-foreground)" }}>Upload Bukti Transfer</label>
             <label
-              className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer hover:border-emerald transition-colors block"
-              style={{ borderColor: paymentProofName ? "var(--emerald)" : "var(--border)" }}
+              className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors block"
+              style={{ borderColor: paymentProofName ? "oklch(0.55 0.17 160)" : "var(--border)" }}
             >
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    setPaymentProofName(e.target.files[0].name);
-                  }
-                }}
-              />
-              <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: paymentProofName ? "var(--emerald)" : "var(--muted-foreground)" }} />
-              {paymentProofName ? (
-                <p className="text-sm font-medium" style={{ color: "var(--emerald)" }}>{paymentProofName}</p>
-              ) : (
-                <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Click to upload receipt or proof of transfer</p>
-              )}
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) setPaymentProofName(e.target.files[0].name); }} />
+              <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: paymentProofName ? "oklch(0.55 0.17 160)" : "var(--muted-foreground)" }} />
+              {paymentProofName
+                ? <p className="text-sm font-medium" style={{ color: "oklch(0.55 0.17 160)" }}>{paymentProofName}</p>
+                : <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>Klik untuk upload bukti transfer (jpg, png)</p>}
             </label>
           </div>
 
-          {/* Tombol akan ter-disable jika belum pura-pura upload */}
           <button
             onClick={() => submitPayment()}
             disabled={isSubmitting || !selectedLoanId || !paymentProofName}
-            className="btn-emerald mt-4"
+            className="btn-emerald mt-4 flex items-center gap-2"
           >
-            {isSubmitting ? "Memproses..." : <><CheckCircle className="w-4 h-4" /> Submit Payment</>}
+            {isSubmitting ? "Memproses..." : <><CheckCircle className="w-4 h-4" /> Submit Pembayaran</>}
           </button>
         </div>
       )}
 
+      {/* Riwayat pembayaran */}
       <div className="stat-card overflow-x-auto">
-        <h3 className="font-semibold mb-4">Payment History</h3>
+        <h3 className="font-semibold mb-4">Riwayat Pembayaran</h3>
         <table className="data-table">
-          <thead><tr><th>Date</th><th>Loan ID</th><th>Amount</th><th>Status</th></tr></thead>
+          <thead><tr><th>Tanggal</th><th>Loan ID</th><th>Jumlah</th><th>Status</th></tr></thead>
           <tbody>
           {paymentRecords.map((p) => (
             <tr key={p.id}>
               <td>{formatDate(p.date)}</td>
-              <td className="truncate max-w-[120px]" title={p.loanId}>{p.loanId}</td>
+              <td className="truncate max-w-[120px] font-mono text-xs" title={p.loanId}>{p.loanId}</td>
               <td className="font-semibold">{formatCurrency(p.amount)}</td>
               <td>
-                <span className={`badge-status flex items-center w-max gap-1 ${
-                  p.status === "verified" ? "badge-approved" :
-                    p.status === "rejected" ? "badge-rejected" : "badge-pending"
-                }`}>
-                  {p.status === "verified" ? <CheckCircle className="w-3 h-3"/> :
-                    p.status === "rejected" ? <XCircle className="w-3 h-3"/> : <Clock className="w-3 h-3"/>}
-                  <span className="capitalize">{p.status}</span>
-                </span>
+                  <span className={`badge-status flex items-center w-max gap-1 ${p.status === "verified" ? "badge-approved" : p.status === "rejected" ? "badge-rejected" : "badge-pending"}`}>
+                    {p.status === "verified" ? <CheckCircle className="w-3 h-3" /> : p.status === "rejected" ? <XCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                    <span className="capitalize">{p.status}</span>
+                  </span>
               </td>
             </tr>
           ))}

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Eye, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Eye, Clock, CheckCircle, XCircle, AlertCircle, BadgeCheck } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { collection, getDocs, query, where } from "firebase/firestore";
@@ -12,10 +12,10 @@ export const Route = createFileRoute("/dashboard/loans")({
 });
 
 const statusConfig: Record<string, any> = {
-  approved: { icon: CheckCircle, badge: "badge-approved", label: "Approved" },
-  pending: { icon: Clock, badge: "badge-pending", label: "Pending" },
-  rejected: { icon: XCircle, badge: "badge-rejected", label: "Rejected" },
-  completed: { icon: CheckCircle, badge: "badge-completed", label: "Completed" },
+  approved:  { icon: CheckCircle, badge: "badge-approved",  label: "Approved"  },
+  pending:   { icon: Clock,        badge: "badge-pending",   label: "Pending"   },
+  rejected:  { icon: XCircle,      badge: "badge-rejected",  label: "Rejected"  },
+  completed: { icon: BadgeCheck,   badge: "badge-completed", label: "Completed" },
 };
 
 interface CustomerLoan {
@@ -42,7 +42,7 @@ function MyLoansPage() {
       if (!auth.currentUser) return [];
       const q = query(collection(db, "loans"), where("userId", "==", auth.currentUser.uid));
       const snap = await getDocs(q);
-      return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CustomerLoan));
+      return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as CustomerLoan));
     },
     enabled: !!auth.currentUser,
   });
@@ -68,15 +68,25 @@ function MyLoansPage() {
     );
   }
 
-  const filtered = filter === "all" ? customerLoans : customerLoans.filter((l) => l.status?.toLowerCase() === filter);
+  const filtered =
+    filter === "all"
+      ? customerLoans
+      : customerLoans.filter((l) => l.status?.toLowerCase() === filter);
 
   return (
     <DashboardLayout role="customer" title="My Loans" subtitle="Track all your loan applications">
       <div className="flex items-center gap-2 mb-6 flex-wrap">
         {["all", "approved", "pending", "rejected", "completed"].map((f) => (
-          <button key={f} onClick={() => setFilter(f)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${filter === f ? "gradient-emerald" : ""}`}
-                  style={filter === f ? { color: "var(--emerald-foreground)" } : { background: "var(--secondary)", color: "var(--muted-foreground)" }}>
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${filter === f ? "gradient-emerald" : ""}`}
+            style={
+              filter === f
+                ? { color: "var(--emerald-foreground)" }
+                : { background: "var(--secondary)", color: "var(--muted-foreground)" }
+            }
+          >
             {f.charAt(0).toUpperCase() + f.slice(1)}
           </button>
         ))}
@@ -84,11 +94,37 @@ function MyLoansPage() {
 
       <div className="space-y-4">
         {filtered.map((loan) => {
-          const safeStatus = loan.status ? loan.status.toLowerCase() : "pending";
-          const cfg = statusConfig[safeStatus] || { icon: AlertCircle, badge: "badge-pending", label: loan.status || "Unknown" };
+          const safeStatus = loan.status?.toLowerCase() ?? "pending";
+          const cfg = statusConfig[safeStatus] ?? { icon: AlertCircle, badge: "badge-pending", label: loan.status || "Unknown" };
+          const isCompleted = safeStatus === "completed";
 
           return (
-            <div key={loan.id} className="stat-card">
+            <div
+              key={loan.id}
+              className="stat-card relative overflow-hidden"
+              style={isCompleted ? { opacity: 0.5, filter: "grayscale(0.5)" } : {}}
+            >
+              {/* Overlay penutup + badge LUNAS — hanya muncul kalau completed */}
+              {isCompleted && (
+                <div
+                  className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl"
+                  style={{ background: "rgba(0,0,0,0.15)", backdropFilter: "blur(2px)" }}
+                >
+                  <span
+                    className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold"
+                    style={{
+                      background: "var(--card)",
+                      color: "var(--muted-foreground)",
+                      border: "1px solid var(--border)",
+                      boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
+                    }}
+                  >
+                    <BadgeCheck className="w-4 h-4" />
+                    LUNAS
+                  </span>
+                </div>
+              )}
+
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center" style={{ color: "var(--primary-foreground)" }}>
@@ -105,13 +141,17 @@ function MyLoansPage() {
                     <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>{loan.duration} months @ {loan.rate}%</p>
                   </div>
                   <span className={`badge-status ${cfg.badge}`}>{cfg.label}</span>
-                  <button onClick={() => setSelected(selected === loan.id ? null : loan.id)} className="btn-outline p-2">
+                  <button
+                    onClick={() => !isCompleted && setSelected(selected === loan.id ? null : loan.id)}
+                    className="btn-outline p-2"
+                    disabled={isCompleted}
+                  >
                     <Eye className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              {selected === loan.id && (
+              {selected === loan.id && !isCompleted && (
                 <div className="mt-4 pt-4 border-t grid md:grid-cols-3 gap-4 animate-fade-in" style={{ borderColor: "var(--border)" }}>
                   <div>
                     <p className="text-xs mb-1" style={{ color: "var(--muted-foreground)" }}>Remaining Balance</p>
