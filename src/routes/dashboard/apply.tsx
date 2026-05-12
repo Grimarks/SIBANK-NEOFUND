@@ -192,12 +192,6 @@ function ApplyLoanPage() {
               </div>
             ))}
           </div>
-          <div className="stat-card flex items-start gap-3" style={{ background: "color-mix(in oklch, var(--info) 8%, var(--card))" }}>
-            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: "var(--info)" }} />
-            <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
-              Interest rates are calculated based on loan duration. Actual rates may vary after credit assessment.
-            </p>
-          </div>
 
           <button
             className="btn-emerald w-full py-3"
